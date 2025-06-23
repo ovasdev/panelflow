@@ -5,7 +5,7 @@ from textual import events
 
 
 class ThreePanelApp(App):
-    """Приложение с навигацией между панелями и отображением текста на активной панели"""
+    """Приложение с навигацией между панелями и элементами внутри панелей"""
 
     CSS = """
     Screen {
@@ -34,7 +34,7 @@ class ThreePanelApp(App):
     .panel-active {
         width: 1fr;
         border: solid green;
-        background: darkgreen;
+        background: darkgreen 10%;
         padding: 1;
     }
 
@@ -52,22 +52,23 @@ class ThreePanelApp(App):
         super().__init__()
         self.input_history = []
         self.active_panel = 0  # 0, 1, 2 для панелей 1, 2, 3
-        self.panel_contents = [
-            "ПАНЕЛЬ 1 (АКТИВНА)\n\nОжидание ввода...\n\nУправление:\n• Ctrl+→ следующая панель\n• Ctrl+← предыдущая панель",
-            "ПАНЕЛЬ 2\n\nСодержимое панели 2",
-            "ПАНЕЛЬ 3\n\nСодержимое панели 3"
+        self.active_element = [0, 0, 0]  # Активный элемент для каждой панели
+        self.panel_elements = [
+            ["Добро пожаловать!", "Используйте стрелки для навигации", "Ctrl+стрелки для смены панелей"],
+            ["Элемент 1 панели 2", "Элемент 2 панели 2"],
+            ["Элемент 1 панели 3", "Элемент 2 панели 3", "Элемент 3 панели 3"]
         ]
 
     def compose(self) -> ComposeResult:
         """Создаем интерфейс"""
-        yield Static("Система мониторинга - Ctrl+стрелки для навигации между панелями", id="header")
+        yield Static("Навигация: Ctrl+стрелки (панели) | ↑↓←→ (элементы)", id="header")
 
         with Horizontal(id="main"):
-            yield Static(self.panel_contents[0], classes="panel-active", id="panel1")
-            yield Static(self.panel_contents[1], classes="panel", id="panel2")
-            yield Static(self.panel_contents[2], classes="panel", id="panel3")
+            yield Static("", classes="panel-active", id="panel1")
+            yield Static("", classes="panel", id="panel2")
+            yield Static("", classes="panel", id="panel3")
 
-        yield Input(placeholder="Введите текст - он появится на активной панели...", id="command-input")
+        yield Input(placeholder="Введите текст - он добавится как новый элемент...", id="command-input")
 
     def on_key(self, event: events.Key) -> None:
         """Обрабатываем нажатия клавиш"""
@@ -75,40 +76,65 @@ class ThreePanelApp(App):
             # Переход к следующей панели
             if self.active_panel < 2:
                 self.active_panel += 1
-                self.update_active_panel()
+                self.update_display()
                 event.prevent_default()
         elif event.key == "ctrl+left":
             # Переход к предыдущей панели
             if self.active_panel > 0:
                 self.active_panel -= 1
-                self.update_active_panel()
+                self.update_display()
+                event.prevent_default()
+        elif event.key == "down" or event.key == "right":
+            # Следующий элемент в активной панели
+            max_elements = len(self.panel_elements[self.active_panel])
+            if max_elements > 0 and self.active_element[self.active_panel] < max_elements - 1:
+                self.active_element[self.active_panel] += 1
+                self.update_display()
+                event.prevent_default()
+        elif event.key == "up" or event.key == "left":
+            # Предыдущий элемент в активной панели
+            if self.active_element[self.active_panel] > 0:
+                self.active_element[self.active_panel] -= 1
+                self.update_display()
                 event.prevent_default()
 
-    def update_active_panel(self):
-        """Обновляем визуальное выделение активной панели"""
+    def update_display(self):
+        """Обновляем отображение всех панелей"""
         for i in range(3):
             panel = self.query_one(f"#panel{i + 1}", Static)
+
+            # Устанавливаем стиль активной/неактивной панели
             if i == self.active_panel:
                 panel.remove_class("panel")
                 panel.add_class("panel-active")
-                # Обновляем содержимое с указанием активности
-                active_content = f"ПАНЕЛЬ {i + 1} (АКТИВНА)\n\n{self.get_panel_content(i)}"
-                panel.update(active_content)
+                panel_title = f"ПАНЕЛЬ {i + 1} (АКТИВНА)"
             else:
                 panel.remove_class("panel-active")
                 panel.add_class("panel")
-                # Обновляем содержимое без указания активности
-                inactive_content = f"ПАНЕЛЬ {i + 1}\n\n{self.get_panel_content(i)}"
-                panel.update(inactive_content)
+                panel_title = f"ПАНЕЛЬ {i + 1}"
 
-    def get_panel_content(self, panel_index):
-        """Получаем содержимое панели без заголовка"""
-        content = self.panel_contents[panel_index]
-        # Убираем первую строку с заголовком панели
-        lines = content.split('\n')
-        if lines and lines[0].startswith("ПАНЕЛЬ"):
-            return '\n'.join(lines[2:])  # Пропускаем заголовок и пустую строку
-        return content
+            # Формируем содержимое панели
+            content_lines = [panel_title, ""]
+
+            if not self.panel_elements[i]:
+                content_lines.append("Нет элементов")
+            else:
+                for j, element in enumerate(self.panel_elements[i]):
+                    if i == self.active_panel and j == self.active_element[i]:
+                        # Выделяем активный элемент
+                        content_lines.append(f"[reverse]► {element}[/reverse]")
+                    else:
+                        content_lines.append(f"► {element}")
+
+            # Добавляем информацию о навигации для активной панели
+            if i == self.active_panel:
+                content_lines.extend([
+                    "",
+                    f"Элемент {self.active_element[i] + 1} из {len(self.panel_elements[i])}",
+                    "↑↓ - навигация по элементам"
+                ])
+
+            panel.update("\n".join(content_lines))
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Обрабатываем ввод команды"""
@@ -117,78 +143,94 @@ class ThreePanelApp(App):
         if not user_input:
             return
 
-        # Добавляем в историю
-        self.input_history.append(user_input)
-
         # Обрабатываем специальные команды
         if user_input.lower() == "exit":
             self.exit()
             return
         elif user_input.lower() == "clear":
             self.clear_active_panel()
+        elif user_input.lower() == "delete":
+            self.delete_active_element()
         elif user_input.lower() == "help":
             self.show_help()
         elif user_input.lower() == "reset":
             self.reset_all_panels()
+        elif user_input.startswith("edit "):
+            # Редактируем текущий элемент
+            new_text = user_input[5:]
+            self.edit_active_element(new_text)
         else:
-            # Добавляем текст к активной панели
-            self.add_text_to_active_panel(user_input)
+            # Добавляем новый элемент
+            self.add_element_to_active_panel(user_input)
 
         # Очищаем поле ввода
         event.input.value = ""
 
-    def add_text_to_active_panel(self, text):
-        """Добавляем текст к активной панели"""
-        current_content = self.get_panel_content(self.active_panel)
+    def add_element_to_active_panel(self, text):
+        """Добавляем новый элемент к активной панели"""
+        self.panel_elements[self.active_panel].append(text)
+        # Переходим к новому элементу
+        self.active_element[self.active_panel] = len(self.panel_elements[self.active_panel]) - 1
+        self.update_display()
 
-        # Если это начальное содержимое, заменяем его
-        if "Ожидание ввода" in current_content or "Содержимое панели" in current_content:
-            new_content = f"► {text}"
-        else:
-            # Добавляем к существующему содержимому
-            new_content = f"{current_content}\n► {text}"
+    def edit_active_element(self, new_text):
+        """Редактируем активный элемент"""
+        if self.panel_elements[self.active_panel]:
+            self.panel_elements[self.active_panel][self.active_element[self.active_panel]] = new_text
+            self.update_display()
 
-        # Обновляем содержимое панели
-        self.panel_contents[self.active_panel] = f"ПАНЕЛЬ {self.active_panel + 1}\n\n{new_content}"
-
-        # Обновляем отображение
-        self.update_active_panel()
+    def delete_active_element(self):
+        """Удаляем активный элемент"""
+        if self.panel_elements[self.active_panel]:
+            del self.panel_elements[self.active_panel][self.active_element[self.active_panel]]
+            # Корректируем позицию активного элемента
+            if self.active_element[self.active_panel] >= len(self.panel_elements[self.active_panel]):
+                self.active_element[self.active_panel] = max(0, len(self.panel_elements[self.active_panel]) - 1)
+            self.update_display()
 
     def clear_active_panel(self):
         """Очищаем активную панель"""
-        self.panel_contents[self.active_panel] = f"ПАНЕЛЬ {self.active_panel + 1}\n\nПанель очищена"
-        self.update_active_panel()
+        self.panel_elements[self.active_panel] = []
+        self.active_element[self.active_panel] = 0
+        self.update_display()
 
     def reset_all_panels(self):
         """Сбрасываем все панели к начальному состоянию"""
-        self.panel_contents = [
-            "ПАНЕЛЬ 1\n\nОжидание ввода...\n\nУправление:\n• Ctrl+→ следующая панель\n• Ctrl+← предыдущая панель",
-            "ПАНЕЛЬ 2\n\nСодержимое панели 2",
-            "ПАНЕЛЬ 3\n\nСодержимое панели 3"
+        self.panel_elements = [
+            ["Добро пожаловать!", "Используйте стрелки для навигации", "Ctrl+стрелки для смены панелей"],
+            ["Элемент 1 панели 2", "Элемент 2 панели 2"],
+            ["Элемент 1 панели 3", "Элемент 2 панели 3", "Элемент 3 панели 3"]
         ]
+        self.active_element = [0, 0, 0]
         self.input_history = []
-        self.update_active_panel()
+        self.update_display()
 
     def show_help(self):
-        """Показываем справку на активной панели"""
-        help_text = """СПРАВКА:
+        """Показываем справку в активной панели"""
+        help_elements = [
+            "=== СПРАВКА ===",
+            "",
+            "НАВИГАЦИЯ ПАНЕЛИ:",
+            "• Ctrl+→ - следующая панель",
+            "• Ctrl+← - предыдущая панель",
+            "",
+            "НАВИГАЦИЯ ЭЛЕМЕНТЫ:",
+            "• ↑ или ← - предыдущий элемент",
+            "• ↓ или → - следующий элемент",
+            "",
+            "КОМАНДЫ:",
+            "• текст - добавить элемент",
+            "• edit текст - изменить элемент",
+            "• delete - удалить элемент",
+            "• clear - очистить панель",
+            "• reset - сбросить всё",
+            "• help - эта справка",
+            "• exit - выход"
+        ]
 
-НАВИГАЦИЯ:
-• Ctrl+→ - следующая панель
-• Ctrl+← - предыдущая панель
-
-КОМАНДЫ:
-• clear - очистить активную панель
-• reset - сбросить все панели
-• help - показать справку
-• exit - выход
-
-ВВОД:
-Любой другой текст добавляется 
-к содержимому активной панели"""
-
-        self.panel_contents[self.active_panel] = f"ПАНЕЛЬ {self.active_panel + 1}\n\n{help_text}"
-        self.update_active_panel()
+        self.panel_elements[self.active_panel] = help_elements
+        self.active_element[self.active_panel] = 0
+        self.update_display()
 
     def on_mount(self):
         """Инициализация при запуске"""
@@ -196,27 +238,31 @@ class ThreePanelApp(App):
         input_widget = self.query_one("#command-input", Input)
         input_widget.focus()
 
-        # Устанавливаем первую панель активной
-        self.update_active_panel()
+        # Обновляем отображение
+        self.update_display()
 
 
 def main():
     """Главная функция"""
-    print("🚀 Запуск приложения с навигацией между панелями")
+    print("🚀 Запуск приложения с навигацией по элементам")
     print("=" * 60)
-    print("УПРАВЛЕНИЕ:")
+    print("НАВИГАЦИЯ ПАНЕЛИ:")
     print("• Ctrl+→ (стрелка вправо) - следующая панель")
     print("• Ctrl+← (стрелка влево) - предыдущая панель")
     print()
+    print("НАВИГАЦИЯ ЭЛЕМЕНТЫ:")
+    print("• ↑ или ← - предыдущий элемент")
+    print("• ↓ или → - следующий элемент")
+    print("• Активный элемент выделен инверсией")
+    print()
     print("КОМАНДЫ:")
-    print("• clear - очистить активную панель")
-    print("• reset - сбросить все панели")
+    print("• текст - добавить новый элемент")
+    print("• edit текст - изменить текущий элемент")
+    print("• delete - удалить текущий элемент")
+    print("• clear - очистить панель")
+    print("• reset - сбросить всё к начальному состоянию")
     print("• help - показать справку")
     print("• exit - выход")
-    print()
-    print("ВВОД:")
-    print("• Любой текст добавляется к активной панели")
-    print("• Активная панель выделена зелёным цветом")
     print("=" * 60)
 
     input("Нажмите Enter для запуска...")
