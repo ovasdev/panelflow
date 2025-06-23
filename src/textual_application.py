@@ -5,7 +5,7 @@ from textual import events
 
 
 class ThreePanelApp(App):
-    """Приложение с навигацией между панелями и элементами внутри панелей"""
+    """Приложение с прокруткой и открытием элементов на следующей панели"""
 
     CSS = """
     Screen {
@@ -50,25 +50,50 @@ class ThreePanelApp(App):
 
     def __init__(self):
         super().__init__()
-        self.input_history = []
         self.active_panel = 0  # 0, 1, 2 для панелей 1, 2, 3
         self.active_element = [0, 0, 0]  # Активный элемент для каждой панели
+        self.scroll_offset = [0, 0, 0]  # Смещение прокрутки для каждой панели
+
+        # Иерархическая структура: элемент -> список подэлементов
         self.panel_elements = [
-            ["Добро пожаловать!", "Используйте стрелки для навигации", "Ctrl+стрелки для смены панелей"],
-            ["Элемент 1 панели 2", "Элемент 2 панели 2"],
-            ["Элемент 1 панели 3", "Элемент 2 панели 3", "Элемент 3 панели 3"]
+            ["📁 Документы", "📁 Проекты", "📁 Изображения", "📄 readme.txt", "📄 config.json"],
+            [],  # Будет заполняться при открытии элементов из панели 1
+            []  # Будет заполняться при открытии элементов из панели 2
         ]
+
+        # Данные для подэлементов
+        self.sub_elements = {
+            "📁 Документы": ["📄 отчет.docx", "📄 презентация.pptx", "📁 Архив", "📄 заметки.txt"],
+            "📁 Проекты": ["📁 Проект А", "📁 Проект Б", "📄 план.md", "📄 TODO.txt"],
+            "📁 Изображения": ["🖼️ фото1.jpg", "🖼️ фото2.png", "🖼️ логотип.svg"],
+            "📄 readme.txt": ["Строка 1: Добро пожаловать", "Строка 2: Инструкции", "Строка 3: Контакты"],
+            "📄 config.json": ["{ \"version\": \"1.0\" }", "{ \"debug\": true }", "{ \"theme\": \"dark\" }"],
+            "📁 Архив": ["📄 старый_файл1.txt", "📄 старый_файл2.doc"],
+            "📁 Проект А": ["📄 main.py", "📄 utils.py", "📁 tests"],
+            "📁 Проект Б": ["📄 app.js", "📄 style.css", "📄 index.html"],
+            "📁 tests": ["📄 test_main.py", "📄 test_utils.py"]
+        }
+
+        # Путь для отображения в заголовке
+        self.panel_paths = ["Корневая папка", "", ""]
 
     def compose(self) -> ComposeResult:
         """Создаем интерфейс"""
-        yield Static("Навигация: Ctrl+стрелки (панели) | ↑↓←→ (элементы)", id="header")
+        yield Static("→/← открыть элемент | ↑/↓ навигация | Ctrl+←→ смена панелей", id="header")
 
         with Horizontal(id="main"):
             yield Static("", classes="panel-active", id="panel1")
             yield Static("", classes="panel", id="panel2")
             yield Static("", classes="panel", id="panel3")
 
-        yield Input(placeholder="Введите текст - он добавится как новый элемент...", id="command-input")
+        yield Input(placeholder="Введите текст для добавления элемента...", id="command-input")
+
+    def get_panel_height(self):
+        """Получаем доступную высоту для содержимого панели"""
+        # Высота экрана минус заголовок, рамки панели, поле ввода
+        screen_height = self.size.height
+        available_height = screen_height - 6  # Заголовок(1) + рамки(2) + ввод(3)
+        return max(5, available_height - 3)  # Минимум 5 строк, резерв на заголовок панели
 
     def on_key(self, event: events.Key) -> None:
         """Обрабатываем нажатия клавиш"""
@@ -84,22 +109,90 @@ class ThreePanelApp(App):
                 self.active_panel -= 1
                 self.update_display()
                 event.prevent_default()
-        elif event.key == "down" or event.key == "right":
+        elif event.key == "right":
+            # Открыть элемент на следующей панели
+            self.open_element_right()
+            event.prevent_default()
+        elif event.key == "left":
+            # Открыть элемент на предыдущей панели (назад)
+            self.open_element_left()
+            event.prevent_default()
+        elif event.key == "down":
             # Следующий элемент в активной панели
-            max_elements = len(self.panel_elements[self.active_panel])
-            if max_elements > 0 and self.active_element[self.active_panel] < max_elements - 1:
-                self.active_element[self.active_panel] += 1
-                self.update_display()
-                event.prevent_default()
-        elif event.key == "up" or event.key == "left":
+            self.move_element_down()
+            event.prevent_default()
+        elif event.key == "up":
             # Предыдущий элемент в активной панели
-            if self.active_element[self.active_panel] > 0:
-                self.active_element[self.active_panel] -= 1
-                self.update_display()
-                event.prevent_default()
+            self.move_element_up()
+            event.prevent_default()
+
+    def move_element_down(self):
+        """Переход к следующему элементу с прокруткой"""
+        max_elements = len(self.panel_elements[self.active_panel])
+        if max_elements > 0 and self.active_element[self.active_panel] < max_elements - 1:
+            self.active_element[self.active_panel] += 1
+            self.update_scroll()
+            self.update_display()
+
+    def move_element_up(self):
+        """Переход к предыдущему элементу с прокруткой"""
+        if self.active_element[self.active_panel] > 0:
+            self.active_element[self.active_panel] -= 1
+            self.update_scroll()
+            self.update_display()
+
+    def update_scroll(self):
+        """Обновляем прокрутку для активной панели"""
+        panel_height = self.get_panel_height()
+        current_element = self.active_element[self.active_panel]
+        current_offset = self.scroll_offset[self.active_panel]
+
+        # Если элемент ниже видимой области
+        if current_element >= current_offset + panel_height:
+            self.scroll_offset[self.active_panel] = current_element - panel_height + 1
+
+        # Если элемент выше видимой области
+        elif current_element < current_offset:
+            self.scroll_offset[self.active_panel] = current_element
+
+    def open_element_right(self):
+        """Открываем элемент на следующей панели"""
+        if self.active_panel < 2 and self.panel_elements[self.active_panel]:
+            current_element = self.panel_elements[self.active_panel][self.active_element[self.active_panel]]
+
+            # Получаем подэлементы
+            sub_elements = self.sub_elements.get(current_element, [f"Содержимое: {current_element}"])
+
+            # Обновляем следующую панель
+            next_panel = self.active_panel + 1
+            self.panel_elements[next_panel] = sub_elements
+            self.active_element[next_panel] = 0
+            self.scroll_offset[next_panel] = 0
+            self.panel_paths[next_panel] = f"{self.panel_paths[self.active_panel]} > {current_element}"
+
+            # Очищаем панели справа
+            if next_panel + 1 < 3:
+                self.panel_elements[next_panel + 1] = []
+                self.panel_paths[next_panel + 1] = ""
+
+            # Переходим к следующей панели
+            self.active_panel = next_panel
+            self.update_display()
+
+    def open_element_left(self):
+        """Возврат к предыдущей панели"""
+        if self.active_panel > 0:
+            self.active_panel -= 1
+
+            # Очищаем панели справа от текущей
+            for i in range(self.active_panel + 1, 3):
+                self.panel_elements[i] = []
+                self.panel_paths[i] = ""
+
+            self.update_display()
 
     def update_display(self):
-        """Обновляем отображение всех панелей"""
+        """Обновляем отображение всех панелей с учетом прокрутки"""
         for i in range(3):
             panel = self.query_one(f"#panel{i + 1}", Static)
 
@@ -107,32 +200,54 @@ class ThreePanelApp(App):
             if i == self.active_panel:
                 panel.remove_class("panel")
                 panel.add_class("panel-active")
-                panel_title = f"ПАНЕЛЬ {i + 1} (АКТИВНА)"
+                panel_status = "(АКТИВНА)"
             else:
                 panel.remove_class("panel-active")
                 panel.add_class("panel")
-                panel_title = f"ПАНЕЛЬ {i + 1}"
+                panel_status = ""
 
-            # Формируем содержимое панели
-            content_lines = [panel_title, ""]
+            # Формируем заголовок панели
+            path = self.panel_paths[i] or f"Панель {i + 1}"
+            header = f"ПАНЕЛЬ {i + 1} {panel_status}"
+            if path != f"Панель {i + 1}":
+                header += f"\n📍 {path}"
 
+            content_lines = [header, ""]
+
+            # Получаем видимые элементы с учетом прокрутки
             if not self.panel_elements[i]:
-                content_lines.append("Нет элементов")
+                content_lines.append("Пусто - используйте → для открытия")
             else:
-                for j, element in enumerate(self.panel_elements[i]):
-                    if i == self.active_panel and j == self.active_element[i]:
+                panel_height = self.get_panel_height()
+                offset = self.scroll_offset[i]
+                visible_elements = self.panel_elements[i][offset:offset + panel_height]
+
+                # Показываем индикатор прокрутки сверху
+                if offset > 0:
+                    content_lines.append(f"⬆️ ... ({offset} элементов выше)")
+
+                # Отображаем видимые элементы
+                for j, element in enumerate(visible_elements):
+                    global_index = offset + j
+                    if i == self.active_panel and global_index == self.active_element[i]:
                         # Выделяем активный элемент
                         content_lines.append(f"[reverse]► {element}[/reverse]")
                     else:
                         content_lines.append(f"► {element}")
 
-            # Добавляем информацию о навигации для активной панели
-            if i == self.active_panel:
-                content_lines.extend([
-                    "",
-                    f"Элемент {self.active_element[i] + 1} из {len(self.panel_elements[i])}",
-                    "↑↓ - навигация по элементам"
-                ])
+                # Показываем индикатор прокрутки снизу
+                total_elements = len(self.panel_elements[i])
+                if offset + panel_height < total_elements:
+                    remaining = total_elements - (offset + panel_height)
+                    content_lines.append(f"⬇️ ... ({remaining} элементов ниже)")
+
+                # Добавляем информацию о позиции для активной панели
+                if i == self.active_panel:
+                    content_lines.extend([
+                        "",
+                        f"Элемент {self.active_element[i] + 1} из {total_elements}",
+                        "→ открыть | ↑↓ навигация"
+                    ])
 
             panel.update("\n".join(content_lines))
 
@@ -156,7 +271,6 @@ class ThreePanelApp(App):
         elif user_input.lower() == "reset":
             self.reset_all_panels()
         elif user_input.startswith("edit "):
-            # Редактируем текущий элемент
             new_text = user_input[5:]
             self.edit_active_element(new_text)
         else:
@@ -171,98 +285,113 @@ class ThreePanelApp(App):
         self.panel_elements[self.active_panel].append(text)
         # Переходим к новому элементу
         self.active_element[self.active_panel] = len(self.panel_elements[self.active_panel]) - 1
+        self.update_scroll()
         self.update_display()
 
     def edit_active_element(self, new_text):
         """Редактируем активный элемент"""
         if self.panel_elements[self.active_panel]:
+            old_text = self.panel_elements[self.active_panel][self.active_element[self.active_panel]]
             self.panel_elements[self.active_panel][self.active_element[self.active_panel]] = new_text
+
+            # Обновляем ключ в sub_elements если это был родительский элемент
+            if old_text in self.sub_elements:
+                self.sub_elements[new_text] = self.sub_elements.pop(old_text)
+
             self.update_display()
 
     def delete_active_element(self):
         """Удаляем активный элемент"""
         if self.panel_elements[self.active_panel]:
+            element_text = self.panel_elements[self.active_panel][self.active_element[self.active_panel]]
             del self.panel_elements[self.active_panel][self.active_element[self.active_panel]]
+
+            # Удаляем из sub_elements если есть
+            if element_text in self.sub_elements:
+                del self.sub_elements[element_text]
+
             # Корректируем позицию активного элемента
             if self.active_element[self.active_panel] >= len(self.panel_elements[self.active_panel]):
                 self.active_element[self.active_panel] = max(0, len(self.panel_elements[self.active_panel]) - 1)
+
+            self.update_scroll()
             self.update_display()
 
     def clear_active_panel(self):
         """Очищаем активную панель"""
         self.panel_elements[self.active_panel] = []
         self.active_element[self.active_panel] = 0
+        self.scroll_offset[self.active_panel] = 0
         self.update_display()
 
     def reset_all_panels(self):
         """Сбрасываем все панели к начальному состоянию"""
         self.panel_elements = [
-            ["Добро пожаловать!", "Используйте стрелки для навигации", "Ctrl+стрелки для смены панелей"],
-            ["Элемент 1 панели 2", "Элемент 2 панели 2"],
-            ["Элемент 1 панели 3", "Элемент 2 панели 3", "Элемент 3 панели 3"]
+            ["📁 Документы", "📁 Проекты", "📁 Изображения", "📄 readme.txt", "📄 config.json"],
+            [],
+            []
         ]
         self.active_element = [0, 0, 0]
-        self.input_history = []
+        self.scroll_offset = [0, 0, 0]
+        self.panel_paths = ["Корневая папка", "", ""]
+        self.active_panel = 0
         self.update_display()
 
     def show_help(self):
         """Показываем справку в активной панели"""
         help_elements = [
-            "=== СПРАВКА ===",
+            "=== НАВИГАЦИЯ ===",
+            "• → - открыть элемент справа",
+            "• ← - вернуться назад",
+            "• ↑/↓ - навигация по элементам",
+            "• Ctrl+←/→ - смена панелей",
             "",
-            "НАВИГАЦИЯ ПАНЕЛИ:",
-            "• Ctrl+→ - следующая панель",
-            "• Ctrl+← - предыдущая панель",
+            "=== ПРОКРУТКА ===",
+            "• Автоматическая при навигации",
+            "• Индикаторы ⬆️⬇️ показывают",
+            "  скрытые элементы",
             "",
-            "НАВИГАЦИЯ ЭЛЕМЕНТЫ:",
-            "• ↑ или ← - предыдущий элемент",
-            "• ↓ или → - следующий элемент",
-            "",
-            "КОМАНДЫ:",
+            "=== КОМАНДЫ ===",
             "• текст - добавить элемент",
-            "• edit текст - изменить элемент",
-            "• delete - удалить элемент",
+            "• edit текст - изменить",
+            "• delete - удалить",
             "• clear - очистить панель",
-            "• reset - сбросить всё",
-            "• help - эта справка",
+            "• reset - сброс к началу",
             "• exit - выход"
         ]
 
         self.panel_elements[self.active_panel] = help_elements
         self.active_element[self.active_panel] = 0
+        self.scroll_offset[self.active_panel] = 0
         self.update_display()
 
     def on_mount(self):
         """Инициализация при запуске"""
-        # Фокусируемся на поле ввода
         input_widget = self.query_one("#command-input", Input)
         input_widget.focus()
-
-        # Обновляем отображение
         self.update_display()
 
 
 def main():
     """Главная функция"""
-    print("🚀 Запуск приложения с навигацией по элементам")
+    print("🚀 Файловый менеджер с прокруткой и навигацией")
     print("=" * 60)
-    print("НАВИГАЦИЯ ПАНЕЛИ:")
-    print("• Ctrl+→ (стрелка вправо) - следующая панель")
-    print("• Ctrl+← (стрелка влево) - предыдущая панель")
+    print("НАВИГАЦИЯ:")
+    print("• → - открыть элемент на следующей панели")
+    print("• ← - вернуться на предыдущую панель")
+    print("• ↑/↓ - перемещение по элементам")
+    print("• Ctrl+←/→ - переключение между панелями")
     print()
-    print("НАВИГАЦИЯ ЭЛЕМЕНТЫ:")
-    print("• ↑ или ← - предыдущий элемент")
-    print("• ↓ или → - следующий элемент")
-    print("• Активный элемент выделен инверсией")
+    print("ПРОКРУТКА:")
+    print("• Автоматическая при длинных списках")
+    print("• Заголовок панели всегда видим")
+    print("• Индикаторы ⬆️⬇️ показывают скрытые элементы")
     print()
     print("КОМАНДЫ:")
-    print("• текст - добавить новый элемент")
-    print("• edit текст - изменить текущий элемент")
-    print("• delete - удалить текущий элемент")
-    print("• clear - очистить панель")
-    print("• reset - сбросить всё к начальному состоянию")
-    print("• help - показать справку")
-    print("• exit - выход")
+    print("• текст - добавить элемент")
+    print("• edit текст - редактировать элемент")
+    print("• delete - удалить элемент")
+    print("• help - справка")
     print("=" * 60)
 
     input("Нажмите Enter для запуска...")
