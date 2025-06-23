@@ -1,0 +1,13 @@
+{
+  "name": "Simple Application",
+  "description": "A simple application that demonstrates basic functionality. It contains only one informational panel",
+  "panels": [
+    {
+      "name": "Information Panel",
+      "description": "A panel that displays information.",
+      "actions": [
+        "close"
+      ]
+    }
+  ]
+}

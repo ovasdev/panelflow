@@ -1,0 +1,7 @@
+{
+  "name" : "Panel",
+  "description" : "A panel is a container that can hold other components.",
+  "actions" : [
+    "close", "minimize"
+  ]
+}
