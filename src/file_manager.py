@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.reactive import reactive
 from textual.widgets import Header, Label, Static, TextArea
 from textual.events import Key
@@ -119,8 +119,7 @@ class DataWidget(VerticalScroll):
 
     def watch_items(self, new_items: List[Any]) -> None:
         self.active_item_idx = 0
-        for child in self.query(Label):
-            child.remove()
+        self.remove_children()
         for item in new_items:
             display_name = self.handler.get_item_display_name(item)
             self.mount(Label(display_name))
@@ -138,7 +137,6 @@ class DataWidget(VerticalScroll):
         for idx, label in enumerate(self.query(Label)):
             label.set_class(idx == self.active_item_idx, "active-item")
 
-    # FIX: Explicitly handle key events to ensure selection works over default scroll.
     def on_key(self, event: Key) -> None:
         if event.key == "up":
             event.stop()
@@ -178,10 +176,7 @@ class WidgetWrapper(Vertical):
 
 
 class PanelWidget(Vertical):
-    """
-    The main container for a single panel.
-    """
-    is_active_panel = reactive(False)
+    """The main container for a single panel's content."""
 
     def __init__(self, node: 'TreeNode', panels_config: Dict[str, Any], **kwargs):
         super().__init__(**kwargs)
@@ -189,9 +184,7 @@ class PanelWidget(Vertical):
         self.panels_config = panels_config
 
     def compose(self) -> ComposeResult:
-        """Creates the content of the panel when it is mounted."""
         panel_config = self.panels_config[self.node.panel_id]
-
         title = getattr(self.node.handler, 'dynamic_title', panel_config['title'])
         yield PanelHeader(title, panel_config.get('description', ''))
 
@@ -210,8 +203,26 @@ class PanelWidget(Vertical):
 
             yield WidgetWrapper(widget_title, actual_widget, id=f"widget_{widget_id}")
 
-    def watch_is_active_panel(self, active: bool):
+
+class PanelSlot(Container):
+    """A container that holds a single PanelWidget, managing its lifecycle."""
+    node = reactive[Optional[TreeNode]](None)
+
+    def __init__(self, panels_config: Dict[str, Any], **kwargs):
+        super().__init__(**kwargs)
+        self.panels_config = panels_config
+
+    def watch_node(self, old_node: Optional[TreeNode], new_node: Optional[TreeNode]) -> None:
+        """Reactive method to update the panel when the node changes."""
+        self.remove_children()
+        if new_node is not None:
+            panel_widget = PanelWidget(node=new_node, panels_config=self.panels_config)
+            self.mount(panel_widget)
+
+    def set_active(self, active: bool) -> None:
         self.set_class(active, "panel-active")
+        if self.query(PanelWidget):
+            self.query_one(PanelWidget).set_class(active, "panel-active")
 
 
 class PanelFlowApp(App):
@@ -222,8 +233,9 @@ class PanelFlowApp(App):
     Screen { overflow: hidden; }
     Horizontal { height: 100%; width: 100%; }
     #panels_container { height: 1fr; }
-    PanelWidget { width: 33.33%; height: 100%; border: solid #666; }
-    PanelWidget.panel-active { border: heavy green; }
+    PanelSlot { width: 33.33%; height: 100%; border: solid transparent; }
+    PanelSlot.panel-active { border: heavy green; }
+    PanelWidget { height: 100%; border: solid #666; }
     PanelHeader { height: auto; padding: 0 1; background: #222; }
     .panel-title { text-style: bold; }
     .panel-description { color: #888; }
@@ -232,7 +244,9 @@ class PanelFlowApp(App):
     .widget-title { color: #999; }
     DataWidget { background: #111; height: 1fr; }
     .active-item { background: green; color: black; }
-    #input_container { height: 3; padding: 0 1; background: #111; }
+    #input_container { height: 3; padding: 0 1; background: #111; layout: vertical;}
+    #input_container > Label { height: 1; }
+    #input_area { height: 1fr; }
     """
 
     BINDINGS = [
@@ -258,8 +272,11 @@ class PanelFlowApp(App):
         self.input_widget: Optional[TextArea] = None
 
     def compose(self) -> ComposeResult:
+        # FIX: Use 'with' context manager for proper mounting order.
         yield Header()
-        yield Horizontal(id="panels_container")
+        with Horizontal(id="panels_container"):
+            for i in range(3):
+                yield PanelSlot(panels_config=self.panels_config, id=f"slot_{i}")
         yield Vertical(Label("Command:"), TextArea(id="input_area", show_line_numbers=False), id="input_container")
 
     def on_mount(self) -> None:
@@ -280,14 +297,9 @@ class PanelFlowApp(App):
         return TreeNode(panel_id, handler, parent)
 
     def _update_view(self):
-        if not self.active_node:
-            return
+        if not self.active_node: return
 
-        path_to_active = []
-        curr = self.active_node
-        while curr:
-            path_to_active.insert(0, curr)
-            curr = curr.parent
+        path_to_active = self.get_path_to_active()
 
         window_size = 3
         last_visible_idx = len(path_to_active) - 1
@@ -298,68 +310,49 @@ class PanelFlowApp(App):
         active_panel_dynamic_title = getattr(self.active_node.handler, 'dynamic_title', None)
         active_panel_title = active_panel_dynamic_title or self.panels_config[self.active_node.panel_id]['title']
 
-        header_parts = []
-        if hidden_left > 0:
-            header_parts.append(f"◀ {hidden_left}")
+        header_parts = [f"◀ {hidden_left}"] if hidden_left > 0 else []
         header_parts.append(active_panel_title)
 
         self.query_one(Header).tall = False
         self.query_one(Header).title = " | ".join(header_parts)
 
-        container = self.query_one("#panels_container")
-
-        # FIX: Instead of remove_children, intelligently update or create panels.
-        # This is a more robust approach that avoids ID conflicts.
-        existing_panels = container.query(PanelWidget)
-
-        # Mount new panels if needed
-        while len(existing_panels) < len(visible_path):
-            new_panel = PanelWidget(node=visible_path[len(existing_panels)], panels_config=self.panels_config)
-            container.mount(new_panel)
-            existing_panels = container.query(PanelWidget)
-
-        # Remove extra panels if needed
-        while len(existing_panels) > len(visible_path):
-            existing_panels[-1].remove()
-            existing_panels = container.query(PanelWidget)
-
-        # Update the nodes for the remaining panels
-        for i, panel_widget in enumerate(existing_panels):
-            panel_widget.node = visible_path[i]
-            # This is a bit of a hack. A better way would be a custom message
-            # to tell the panel to re-compose itself. For now, we remove and re-add.
-            panel_widget.remove_children()
-            panel_widget.compose()
+        slots = self.query(PanelSlot)
+        for i, slot in enumerate(slots):
+            if i < len(visible_path):
+                slot.node = visible_path[i]
+            else:
+                slot.node = None
 
         self._update_active_states()
 
     def _update_active_states(self):
-        panels = self.query(PanelWidget)
-        for i, panel in enumerate(panels):
+        slots = self.query(PanelSlot)
+        for i, slot in enumerate(slots):
             is_active_panel = (i == self.active_panel_idx)
-            panel.is_active_panel = is_active_panel
+            slot.set_active(is_active_panel)
 
             if is_active_panel:
-                widgets = panel.query(WidgetWrapper)
-                for j, widget in enumerate(widgets):
-                    widget.is_active = (j == self.active_widget_idx)
+                try:
+                    panel_widget = slot.query_one(PanelWidget)
+                    widgets = panel_widget.query(WidgetWrapper)
+                    for j, widget in enumerate(widgets):
+                        widget.is_active = (j == self.active_widget_idx)
+                except Exception:
+                    pass  # Slot might be empty
 
     def _is_input_focused(self) -> bool:
-        return self.input_widget.has_focus and self.input_widget.text != ""
+        return self.input_widget is not None and self.input_widget.has_focus
 
     def get_active_data_widget(self) -> Optional[DataWidget]:
         try:
-            panels = self.query(PanelWidget)
-            if not panels: return None
-            active_panel = panels[self.active_panel_idx]
-
+            active_slot = self.query(f"#slot_{self.active_panel_idx}")[0]
+            active_panel = active_slot.query_one(PanelWidget)
             widgets = active_panel.query(WidgetWrapper)
             if not widgets: return None
             active_wrapper = widgets[self.active_widget_idx]
-
             if isinstance(active_wrapper.widget, DataWidget):
                 return active_wrapper.widget
-        except IndexError:
+        except (IndexError, Exception):
             return None
         return None
 
@@ -378,11 +371,13 @@ class PanelFlowApp(App):
     def action_activate_item(self) -> None:
         if self._is_input_focused(): return
 
-        panels = self.query(PanelWidget)
-        if not panels or self.active_panel_idx >= len(panels): return
+        try:
+            active_slot = self.query(f"#slot_{self.active_panel_idx}")[0]
+            active_panel = active_slot.query_one(PanelWidget)
+        except (IndexError, Exception):
+            return
 
-        panel = panels[self.active_panel_idx]
-        widgets = panel.query(WidgetWrapper)
+        widgets = active_panel.query(WidgetWrapper)
         if not widgets or self.active_widget_idx >= len(widgets):
             nav_instruction = self.active_node.handler.on_execute()
             if nav_instruction: self._handle_navigation(nav_instruction)
@@ -409,12 +404,13 @@ class PanelFlowApp(App):
 
         if self.active_node and self.active_node.parent:
             parent = self.active_node.parent
-            # Remove the node from its parent's children list
             if self.active_node in parent.children:
                 parent.children.remove(self.active_node)
 
             self.active_node = parent
-            self.active_panel_idx = min(self.active_panel_idx, 2)
+
+            path_len = len(self.get_path_to_active())
+            self.active_panel_idx = min(path_len - 1, 2)
             self.active_widget_idx = 0
             self._update_view()
 
@@ -426,7 +422,8 @@ class PanelFlowApp(App):
 
     def action_focus_next_panel(self) -> None:
         if self._is_input_focused(): return
-        self.active_panel_idx = min(len(self.query(PanelWidget)) - 1, self.active_panel_idx + 1)
+        # FIX: Correct logic to increment panel index
+        self.active_panel_idx = min(len(self.query(PanelSlot)) - 1, self.active_panel_idx + 1)
         self.input_widget.text = ""
         self._update_active_states()
 
@@ -436,7 +433,6 @@ class PanelFlowApp(App):
             parent = self.active_node.parent
             if len(parent.children) > 1:
                 parent.active_child_idx = (parent.active_child_idx - 1) % len(parent.children)
-                # FIX: Set active_node to the *newly selected* active child
                 self.active_node = parent.get_active_child()
                 self._update_view()
 
@@ -446,7 +442,6 @@ class PanelFlowApp(App):
             parent = self.active_node.parent
             if len(parent.children) > 1:
                 parent.active_child_idx = (parent.active_child_idx + 1) % len(parent.children)
-                # FIX: Set active_node to the *newly selected* active child
                 self.active_node = parent.get_active_child()
                 self._update_view()
 
@@ -466,7 +461,6 @@ class PanelFlowApp(App):
             self._update_view()
 
     def get_path_to_active(self) -> List[TreeNode]:
-        """Helper to get the list of nodes from root to active."""
         path = []
         curr = self.active_node
         while curr:
@@ -510,7 +504,6 @@ class FileSystemWidgetHandler(BaseWidgetHandler):
         items = []
         try:
             if path.is_dir():
-                # FIX: More robust check for parent directory
                 if path.parent.resolve() != path.resolve():
                     items.append(path.parent)
 
