@@ -1,0 +1,121 @@
+{
+  "entryPanel": "main_menu",
+  "panels": [
+    {
+      "id": "main_menu",
+      "title": "Главное меню",
+      "description": "Основная панель приложения",
+      "handler_class_name": "MainMenuHandler",
+      "widgets": [
+        {
+          "id": "welcome_text",
+          "type": "button",
+          "title": "Добро пожаловать в PanelFlow!"
+        },
+        {
+          "id": "go_to_settings",
+          "type": "panel_link",
+          "title": "Настройки",
+          "target_panel_id": "settings_panel",
+          "description": "Перейти к настройкам приложения"
+        },
+        {
+          "id": "go_to_user_form",
+          "type": "panel_link",
+          "title": "Форма пользователя",
+          "target_panel_id": "user_form",
+          "description": "Заполнить данные пользователя"
+        }
+      ]
+    },
+    {
+      "id": "settings_panel",
+      "title": "Настройки",
+      "description": "Панель настроек приложения",
+      "widgets": [
+        {
+          "id": "theme_select",
+          "type": "option_select",
+          "title": "Выберите тему",
+          "options": ["Светлая", "Темная", "Автоматическая"],
+          "value": "Светлая",
+          "handler_class_name": "SettingsHandler"
+        },
+        {
+          "id": "language_select",
+          "type": "option_select",
+          "title": "Язык интерфейса",
+          "options": ["Русский", "English", "Español"],
+          "value": "Русский"
+        },
+        {
+          "id": "save_settings",
+          "type": "button",
+          "title": "Сохранить настройки",
+          "handler_class_name": "SettingsHandler"
+        }
+      ]
+    },
+    {
+      "id": "user_form",
+      "title": "Форма пользователя",
+      "description": "Заполните ваши данные",
+      "handler_class_name": "UserFormHandler",
+      "widgets": [
+        {
+          "id": "user_name",
+          "type": "text_input",
+          "title": "Имя пользователя",
+          "placeholder": "Введите ваше имя",
+          "handler_class_name": "UserFormHandler"
+        },
+        {
+          "id": "user_email",
+          "type": "text_input",
+          "title": "Email",
+          "placeholder": "example@domain.com"
+        },
+        {
+          "id": "user_role",
+          "type": "option_select",
+          "title": "Роль",
+          "options": ["Администратор", "Пользователь", "Гость"],
+          "value": "Пользователь"
+        },
+        {
+          "id": "submit_form",
+          "type": "button",
+          "title": "Отправить форму",
+          "handler_class_name": "UserFormHandler"
+        },
+        {
+          "id": "go_to_profile",
+          "type": "panel_link",
+          "title": "Профиль пользователя",
+          "target_panel_id": "user_profile",
+          "description": "Просмотр профиля"
+        }
+      ]
+    },
+    {
+      "id": "user_profile",
+      "title": "Профиль пользователя",
+      "description": "Информация о пользователе",
+      "widgets": [
+        {
+          "id": "profile_info",
+          "type": "button",
+          "title": "Просмотр профиля",
+          "handler_class_name": "ProfileHandler"
+        },
+        {
+          "id": "edit_profile",
+          "type": "panel_link",
+          "title": "Редактировать профиль",
+          "target_panel_id": "user_form",
+          "description": "Изменить данные профиля"
+        }
+      ]
+    }
+  ]
+}

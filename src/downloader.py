@@ -2,12 +2,13 @@
 """
 PanelFlow: A Declarative TUI Framework for Hierarchical Navigation
 -------------------------------------------------------------------
-This script contains both the PanelFlow library implementation and a file
-manager application built using it, as per the technical specification.
+This script contains both the PanelFlow library implementation and a URL
+processing application built using it.
 """
 
 import os
 import json
+import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -16,25 +17,25 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.reactive import reactive
-from textual.widgets import Header, Label, Static, TextArea
+from textual.widgets import Header, Label, Static, TextArea, Input
+from textual.widget import Widget
 from textual.events import Key
 
 
 # ==============================================================================
-# SECTION 1: PanelFlow Library Core
+# SECTION 1: PanelFlow Library Core (with enhancements)
 # ==============================================================================
 
+# --- 1.1: Base Handlers ---
+
 class BasePanelHandler(ABC):
-    """
-    Abstract base class for Panel logic.
-    """
+    """Abstract base class for Panel logic."""
 
     def __init__(self, context: Dict[str, Any]):
         self.context = context
         self._form_data: Dict[str, Any] = {}
 
     def on_widget_update(self, widget_id: str, value: Any) -> Optional[Tuple[str, str]]:
-        # FIX: Directly modify the internal dictionary to ensure state is saved correctly.
         self._form_data[widget_id] = value
         return None
 
@@ -51,9 +52,7 @@ class BasePanelHandler(ABC):
 
 
 class BaseWidgetHandler(ABC):
-    """
-    Abstract base class for DataWidget logic.
-    """
+    """Abstract base class for list-based DataWidget logic."""
 
     def __init__(self, panel_context: Dict[str, Any], panel_form_data: Dict[str, Any]):
         self.panel_context = panel_context
@@ -70,6 +69,21 @@ class BaseWidgetHandler(ABC):
     def get_item_display_name(self, item: Any) -> str:
         return str(item)
 
+
+class BaseTextInputHandler(ABC):
+    """Abstract base class for TextInputWidget logic."""
+
+    def __init__(self, panel_context: Dict[str, Any], panel_form_data: Dict[str, Any]):
+        self.panel_context = panel_context
+        self.panel_form_data = panel_form_data
+
+    @abstractmethod
+    def on_submit(self, value: str) -> Any:
+        """Called when Enter is pressed in the text input."""
+        pass
+
+
+# --- 1.2: Navigation and UI Components ---
 
 class TreeNode:
     """Represents a single node in the navigation tree."""
@@ -159,6 +173,29 @@ class DataWidget(VerticalScroll):
         return None
 
 
+# FIX: Changed to a single-line Input widget
+class TextInputWidget(Container):
+    """A widget for single-line text input."""
+
+    def __init__(self, handler: BaseTextInputHandler, **kwargs):
+        super().__init__(**kwargs)
+        self.handler = handler
+
+    def compose(self) -> ComposeResult:
+        yield Input(placeholder="...")
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle the submission of the input field."""
+        self.handler.on_submit(event.value)
+
+    def on_key(self, event: Key) -> None:
+        """Handle key events to allow escaping focus."""
+        if event.key == "up":
+            # When up is pressed, blur the input to return control to the panel
+            self.query_one(Input).blur()
+            event.stop()
+
+
 class WidgetWrapper(Vertical):
     """A container for any widget, providing focus highlighting and a title."""
     is_active = reactive(False)
@@ -192,14 +229,17 @@ class PanelWidget(Vertical):
         widgets_config = panel_config.get('widgets', {})
         for widget_id, widget_config in widgets_config.items():
             widget_title = widget_config['title']
-            widget_type = widget_config['type']
+            widget_type = widget_config.get('type', 'DataWidget')
+
+            handler_class_path = widget_config['handler_class']
+            handler_class = globals()[handler_class_path.split('.')[-1]]
+            handler = handler_class(self.node.handler.context, self.node.handler.form_data)
 
             if widget_type == "PanelLink":
                 actual_widget = PanelLinkWidget(widget_title)
-            else:
-                handler_class_path = widget_config['handler_class']
-                handler_class = globals()[handler_class_path.split('.')[-1]]
-                handler = handler_class(self.node.handler.context, self.node.handler.form_data)
+            elif widget_type == "TextInput":
+                actual_widget = TextInputWidget(handler)
+            else:  # DataWidget
                 actual_widget = DataWidget(handler)
 
             yield WidgetWrapper(widget_title, actual_widget, id=f"widget_{widget_id}")
@@ -214,7 +254,6 @@ class PanelSlot(Container):
         self.panels_config = panels_config
 
     def watch_node(self, old_node: Optional[TreeNode], new_node: Optional[TreeNode]) -> None:
-        """Reactive method to update the panel when the node changes."""
         self.remove_children()
         if new_node is not None:
             panel_widget = PanelWidget(node=new_node, panels_config=self.panels_config)
@@ -243,9 +282,8 @@ class PanelFlowApp(App):
     .widget-title { color: #999; }
     DataWidget { background: #111; height: 1fr; }
     .active-item { background: green; color: black; }
-    #input_container { height: 3; padding: 0 1; background: #111; layout: vertical;}
-    #input_container > Label { height: 1; }
-    #input_area { height: 1fr; }
+    TextInputWidget { height: auto; }
+    Input { width: 100%; }
     """
 
     BINDINGS = [
@@ -256,8 +294,6 @@ class PanelFlowApp(App):
         Binding("left", "navigate_back", "Navigate Back", show=False),
         Binding("ctrl+left", "focus_prev_panel", "Focus Left", show=False),
         Binding("ctrl+right", "focus_next_panel", "Focus Right", show=False),
-        Binding("ctrl+up", "switch_prev_tab", "Prev Tab", show=False),
-        Binding("ctrl+down", "switch_next_tab", "Next Tab", show=False),
     ]
 
     def __init__(self, config: Dict[str, Any], **kwargs):
@@ -268,17 +304,14 @@ class PanelFlowApp(App):
         self.active_node: Optional[TreeNode] = None
         self.active_panel_idx = 0
         self.active_widget_idx = 0
-        self.input_widget: Optional[TextArea] = None
 
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal(id="panels_container"):
             for i in range(3):
                 yield PanelSlot(panels_config=self.panels_config, id=f"slot_{i}")
-        yield Vertical(Label("Command:"), TextArea(id="input_area", show_line_numbers=False), id="input_container")
 
     def on_mount(self) -> None:
-        self.input_widget = self.query_one("#input_area", TextArea)
         entry_panel_id = self.config['entryPanel']
         self.root_node = self._create_tree_node(entry_panel_id, context={})
         self.active_node = self.root_node
@@ -287,11 +320,9 @@ class PanelFlowApp(App):
     def _create_tree_node(self, panel_id: str, context: Dict[str, Any], parent: Optional[TreeNode] = None) -> TreeNode:
         panel_config = self.panels_config[panel_id]
         handler_path = panel_config.get('handler_class')
-        if handler_path:
-            handler_class = globals()[handler_path.split('.')[-1]]
-            handler = handler_class(context)
-        else:
-            handler = BasePanelHandler(context)
+        handler_class = globals()[handler_path.split('.')[-1]]
+        handler = handler_class(context)
+        handler.app = self
         return TreeNode(panel_id, handler, parent)
 
     def _update_view(self):
@@ -317,8 +348,9 @@ class PanelFlowApp(App):
         slots = self.query(PanelSlot)
         for i, slot in enumerate(slots):
             if i < len(visible_path):
-                slot.node = visible_path[i]
-            else:
+                if slot.node != visible_path[i]:
+                    slot.node = visible_path[i]
+            elif slot.node is not None:
                 slot.node = None
 
         self.call_after_refresh(self._update_active_states)
@@ -336,83 +368,57 @@ class PanelFlowApp(App):
                     for j, widget in enumerate(widgets):
                         widget.is_active = (j == self.active_widget_idx)
 
-                    # FIX: Explicitly focus the correct widget
-                    active_data_widget = self.get_active_data_widget()
-                    if active_data_widget:
-                        active_data_widget.focus()
-
+                    active_widget = self.get_active_widget()
+                    if active_widget:
+                        active_widget.focus()
                 except Exception:
                     pass
 
-    def _is_input_focused(self) -> bool:
-        # FIX: Check only for focus, not for text content
-        return self.input_widget is not None and self.input_widget.has_focus
-
-    def get_active_data_widget(self) -> Optional[DataWidget]:
+    def get_active_widget(self) -> Optional[Widget]:
         try:
-            # FIX: Target the slot and its children correctly
             active_slot = self.query(f"#slot_{self.active_panel_idx}")[0]
             panel_widget = active_slot.query_one(PanelWidget)
             widgets = panel_widget.query(WidgetWrapper)
             if not widgets: return None
             active_wrapper = widgets[self.active_widget_idx]
-            if isinstance(active_wrapper.widget, DataWidget):
-                return active_wrapper.widget
+            return active_wrapper.widget
         except (IndexError, Exception):
             return None
-        return None
 
     def action_move_up(self) -> None:
-        if self._is_input_focused(): return
-        active_data_widget = self.get_active_data_widget()
-        if active_data_widget:
-            active_data_widget.action_move_up()
+        active_widget = self.get_active_widget()
+        if isinstance(active_widget, DataWidget):
+            active_widget.action_move_up()
 
     def action_move_down(self) -> None:
-        if self._is_input_focused(): return
-        active_data_widget = self.get_active_data_widget()
-        if active_data_widget:
-            active_data_widget.action_move_down()
+        active_widget = self.get_active_widget()
+        if isinstance(active_widget, DataWidget):
+            active_widget.action_move_down()
 
     def action_activate_item(self) -> None:
-        if self._is_input_focused(): return
-
-        try:
-            active_slot = self.query(f"#slot_{self.active_panel_idx}")[0]
-            panel_widget = active_slot.query_one(PanelWidget)
-        except (IndexError, Exception):
-            return
-
-        widgets = panel_widget.query(WidgetWrapper)
-        if not widgets or self.active_widget_idx >= len(widgets):
-            nav_instruction = self.active_node.handler.on_execute()
-            if nav_instruction: self._handle_navigation(nav_instruction)
-            return
-
-        active_widget_wrapper = widgets[self.active_widget_idx]
-        widget_id = active_widget_wrapper.id.split('_', 1)[1]
-        widget_config = self.panels_config[self.active_node.panel_id]['widgets'][widget_id]
-
-        if widget_config['type'] == 'PanelLink':
-            next_panel_id = widget_config['panel_id']
-            self._handle_navigation(("navigate_down", next_panel_id))
-
-        elif widget_config['type'] == 'DataWidget':
-            data_widget = active_widget_wrapper.widget
-            selected_item = data_widget.get_selected_item()
+        active_widget = self.get_active_widget()
+        if isinstance(active_widget, DataWidget):
+            selected_item = active_widget.get_selected_item()
             if selected_item is not None:
-                return_value = data_widget.handler.on_select(selected_item)
-                nav_instruction = self.active_node.handler.on_widget_update(widget_id, return_value)
-                if nav_instruction: self._handle_navigation(nav_instruction)
+                return_value = active_widget.handler.on_select(selected_item)
+
+                try:
+                    active_slot = self.query(f"#slot_{self.active_panel_idx}")[0]
+                    panel_widget = active_slot.query_one(PanelWidget)
+                    wrapper = panel_widget.query(WidgetWrapper)[self.active_widget_idx]
+                    widget_id = wrapper.id.split("_", 1)[1]
+
+                    nav_instruction = self.active_node.handler.on_widget_update(widget_id, return_value)
+                    if nav_instruction:
+                        self._handle_navigation(nav_instruction)
+                except (IndexError, Exception):
+                    pass
 
     def action_navigate_back(self) -> None:
-        if self._is_input_focused(): return
-
         if self.active_node and self.active_node.parent:
             parent = self.active_node.parent
             if self.active_node in parent.children:
                 parent.children.remove(self.active_node)
-
             self.active_node = parent
             path = self.get_path_to_active()
             self.active_panel_idx = min(len(path) - 1, 2)
@@ -420,40 +426,18 @@ class PanelFlowApp(App):
             self._update_view()
 
     def action_focus_prev_panel(self) -> None:
-        if self._is_input_focused(): return
         if self.active_panel_idx > 0:
             self.active_panel_idx -= 1
             self.active_widget_idx = 0
-            self.input_widget.text = ""
             self._update_active_states()
 
     def action_focus_next_panel(self) -> None:
-        if self._is_input_focused(): return
         path_len = len(self.get_path_to_active())
         num_visible_panels = min(path_len, 3)
         if self.active_panel_idx < num_visible_panels - 1:
             self.active_panel_idx += 1
             self.active_widget_idx = 0
-            self.input_widget.text = ""
             self._update_active_states()
-
-    def action_switch_prev_tab(self) -> None:
-        if self._is_input_focused(): return
-        if self.active_node and self.active_node.parent:
-            parent = self.active_node.parent
-            if len(parent.children) > 1:
-                parent.active_child_idx = (parent.active_child_idx - 1) % len(parent.children)
-                self.active_node = parent.get_active_child()
-                self._update_view()
-
-    def action_switch_next_tab(self) -> None:
-        if self._is_input_focused(): return
-        if self.active_node and self.active_node.parent:
-            parent = self.active_node.parent
-            if len(parent.children) > 1:
-                parent.active_child_idx = (parent.active_child_idx + 1) % len(parent.children)
-                self.active_node = parent.get_active_child()
-                self._update_view()
 
     def _handle_navigation(self, instruction: Tuple[str, str]):
         nav_type, panel_id = instruction
@@ -462,7 +446,6 @@ class PanelFlowApp(App):
             new_node = self._create_tree_node(panel_id, context, self.active_node)
             self.active_node.children.append(new_node)
             self.active_node.active_child_idx = len(self.active_node.children) - 1
-
             self.active_node = new_node
 
             path = self.get_path_to_active()
@@ -480,24 +463,50 @@ class PanelFlowApp(App):
 
 
 # ==============================================================================
-# SECTION 2: File Manager Application
+# SECTION 2: URL Processor Application
 # ==============================================================================
 
 APP_CONFIG_JSON = """
 {
-  "appName": "PanelFlow File Manager",
-  "entryPanel": "file_browser",
+  "appName": "URL Processor",
+  "entryPanel": "select_type",
   "panels": [
     {
-      "id": "file_browser",
-      "title": "File Browser",
-      "description": "Select a file or directory",
-      "handler_class": "FileSystemPanelHandler",
+      "id": "select_type",
+      "title": "Выбор типа",
+      "description": "Выберите тип контента",
+      "handler_class": "TypeSelectPanelHandler",
       "widgets": {
-        "file_list": {
+        "type_selector": {
           "type": "DataWidget",
-          "title": "Contents",
-          "handler_class": "FileSystemWidgetHandler"
+          "title": "Типы",
+          "handler_class": "TypeSelectorWidgetHandler"
+        }
+      }
+    },
+    {
+      "id": "enter_url",
+      "title": "Ввод URL",
+      "description": "Введите URL и нажмите Enter",
+      "handler_class": "URLPanelHandler",
+      "widgets": {
+        "url_input": {
+          "type": "TextInput",
+          "title": "URL",
+          "handler_class": "URLInputWidgetHandler"
+        }
+      }
+    },
+    {
+      "id": "show_result",
+      "title": "Результат",
+      "description": "Результат обработки",
+      "handler_class": "ResultPanelHandler",
+      "widgets": {
+        "result_display": {
+          "type": "DataWidget",
+          "title": "Информация",
+          "handler_class": "ResultDisplayWidgetHandler"
         }
       }
     }
@@ -506,67 +515,82 @@ APP_CONFIG_JSON = """
 """
 
 
-class FileSystemWidgetHandler(BaseWidgetHandler):
-    def get_items(self) -> List[Path]:
-        path_str = self.panel_context.get("path", str(Path.home()))
-        path = Path(path_str).expanduser()
+# --- Application Handlers ---
 
-        items = []
-        try:
-            if path.is_dir():
-                if path.parent.resolve() != path.resolve():
-                    items.append(path.parent)
-
-                dirs = sorted([p for p in path.iterdir() if p.is_dir()])
-                files = sorted([p for p in path.iterdir() if p.is_file()])
-                items.extend(dirs)
-                items.extend(files)
-        except (PermissionError, FileNotFoundError):
-            pass
-
-        return items
-
-    def on_select(self, selected_item: Path) -> Path:
-        return selected_item
-
-    def get_item_display_name(self, item: Path) -> str:
-        current_path_str = self.panel_context.get("path", str(Path.home()))
-        current_path = Path(current_path_str).expanduser()
-        # FIX: Check against resolved paths for robust parent detection
-        if item.resolve() == current_path.parent.resolve():
-            return "../"
-        if item.is_dir():
-            return f"{item.name}/"
-        return item.name
-
-
-class FileSystemPanelHandler(BasePanelHandler):
-    def __init__(self, context: Dict[str, Any]):
-        super().__init__(context)
-        path_str = self.context.get("path", str(Path.home()))
-        path = Path(path_str)
-        self.dynamic_title = f"{path.name if path.name else '/'}"
+class TypeSelectPanelHandler(BasePanelHandler):
+    """Panel handler for the first panel (type selection)."""
 
     def on_widget_update(self, widget_id: str, value: Any) -> Optional[Tuple[str, str]]:
-        # The base class now handles storing the data correctly.
         super().on_widget_update(widget_id, value)
+        return ("navigate_down", "enter_url")
 
-        selected_path: Path = value
-        if selected_path.is_dir():
-            return ("navigate_down", "file_browser")
 
+class TypeSelectorWidgetHandler(BaseWidgetHandler):
+    """Widget handler for the list of types."""
+
+    def get_items(self) -> List[Any]:
+        return ["subtitles", "audio", "video"]
+
+    def on_select(self, selected_item: Any) -> Any:
+        return selected_item
+
+
+class URLPanelHandler(BasePanelHandler):
+    """Panel handler for the URL entry panel."""
+
+    def on_widget_update(self, widget_id: str, value: Any) -> Optional[Tuple[str, str]]:
+        super().on_widget_update(widget_id, value)
+        media_type = self.context.get("type_selector", "unknown")
+        url = value
+
+        print(f"PROCESS: Processing URL '{url}' for type '{media_type}'...")
+
+        if media_type == "subtitles":
+            print("subtitles")
+        elif media_type == "video":
+            print("video")
+        elif media_type == "audio":
+            print("audio")
+
+        result_text = f"Успешно обработан URL для '{media_type}': {url}"
+        print("PROCESS: Done.")
+
+        self.form_data["result"] = result_text
+
+        return ("navigate_down", "show_result")
+
+
+class URLInputWidgetHandler(BaseTextInputHandler):
+    """Widget handler for the text input field."""
+
+    def on_submit(self, value: str) -> Any:
+        try:
+            active_slot = self.app.query(f"#slot_{self.app.active_panel_idx}")[0]
+            panel_widget = active_slot.query_one(PanelWidget)
+            wrapper = panel_widget.query(WidgetWrapper)[self.app.active_widget_idx]
+            widget_id = wrapper.id.split("_", 1)[1]
+
+            nav_instruction = panel_widget.node.handler.on_widget_update(widget_id, value)
+            if nav_instruction:
+                self.app._handle_navigation(nav_instruction)
+        except (IndexError, Exception):
+            pass
+
+
+class ResultPanelHandler(BasePanelHandler):
+    """A simple handler for the result panel, does nothing on its own."""
+    pass
+
+
+class ResultDisplayWidgetHandler(BaseWidgetHandler):
+    """Widget handler that displays the final result."""
+
+    def get_items(self) -> List[Any]:
+        result = self.panel_context.get("result", "Нет результата.")
+        return [result]
+
+    def on_select(self, selected_item: Any) -> Any:
         return None
-
-    @property
-    def form_data(self) -> Dict[str, Any]:
-        selected_path = self._form_data.get("file_list")
-        if selected_path:
-            return {"path": str(selected_path)}
-        return {}
-
-    @form_data.setter
-    def form_data(self, value):
-        self._form_data = value
 
 
 # ==============================================================================
@@ -574,6 +598,8 @@ class FileSystemPanelHandler(BasePanelHandler):
 # ==============================================================================
 
 if __name__ == "__main__":
+    BaseTextInputHandler.app = None
     config = json.loads(APP_CONFIG_JSON)
     app = PanelFlowApp(config=config)
+    BaseTextInputHandler.app = app
     app.run()
