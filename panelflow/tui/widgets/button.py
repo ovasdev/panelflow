@@ -2,14 +2,19 @@
 TUI-виджет кнопки.
 """
 
+import logging
 from typing import Any
 from textual.widgets import Button
 from textual.binding import Binding
 
 from panelflow.core.components import AbstractButton
 from panelflow.core.state import TreeNode
+from panelflow.logging_config import get_logger
 
 from .base import BaseWidgetMixin, FocusableWidgetCSS
+
+# Инициализируем логгер для кнопок
+logger = get_logger(__name__)
 
 
 class TuiButton(BaseWidgetMixin, FocusableWidgetCSS, Button):
@@ -45,6 +50,8 @@ class TuiButton(BaseWidgetMixin, FocusableWidgetCSS, Button):
         node: TreeNode,
         post_event_callback
     ):
+        logger.debug(f"Создание TuiButton: '{abstract_widget.title}' (id: {abstract_widget.id})")
+
         # Инициализация Button с заголовком
         Button.__init__(
             self,
@@ -60,11 +67,13 @@ class TuiButton(BaseWidgetMixin, FocusableWidgetCSS, Button):
         Обработчик нажатия кнопки.
         Преобразует событие Textual в событие panelflow.core.
         """
+        logger.info(f"Кнопка '{self.abstract_widget.id}' нажата мышью")
         event.stop()
         self._submit_value(self.abstract_widget.value)
 
     def action_press(self) -> None:
         """Действие для клавиш Enter/Space."""
+        logger.info(f"Кнопка '{self.abstract_widget.id}' активирована клавишей")
         self._submit_value(self.abstract_widget.value)
 
     def _set_initial_value(self, value: Any) -> None:

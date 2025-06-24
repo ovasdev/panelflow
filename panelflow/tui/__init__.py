@@ -7,6 +7,10 @@ PanelFlow TUI Package
 ```python
 from panelflow.core import Application as CoreApplication
 from panelflow.tui import TuiApplication
+from panelflow.logging_config import init_debug_logging
+
+# Инициализируем логирование
+init_debug_logging()
 
 # Создание ядра приложения
 core_app = CoreApplication("application.json", handler_map)

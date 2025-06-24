@@ -15,7 +15,9 @@ from panelflow.core.handlers import BasePanelHandler
 
 # Импорт TUI-рендерера
 from panelflow.tui import TuiApplication
+from panelflow.logging_config import init_core_logging
 
+init_core_logging()
 
 # Пример пользовательского обработчика
 class MainMenuHandler(BasePanelHandler):

@@ -2,11 +2,16 @@
 Базовые классы и миксины для TUI-виджетов.
 """
 
+import logging
 from typing import Any, Callable
 from textual.widget import Widget
 
 from panelflow.core.components import AbstractWidget
 from panelflow.core.state import TreeNode
+from panelflow.logging_config import get_logger
+
+# Инициализируем логгер для виджетов
+logger = get_logger(__name__)
 
 
 class BaseWidgetMixin:
@@ -26,11 +31,14 @@ class BaseWidgetMixin:
         self.post_event = post_event_callback
         self._has_focus = False
 
+        logger.debug(f"Инициализация BaseWidgetMixin для виджета '{abstract_widget.id}'")
+
         # Инициализируем виджет с ID и начальным значением
         super().__init__(id=abstract_widget.id)
 
         # Устанавливаем начальное значение если есть
         if hasattr(abstract_widget, 'value') and abstract_widget.value is not None:
+            logger.debug(f"Установка начального значения для '{abstract_widget.id}': {abstract_widget.value}")
             self._set_initial_value(abstract_widget.value)
 
     def _set_initial_value(self, value: Any) -> None:
@@ -60,6 +68,7 @@ class BaseWidgetMixin:
 
     def _submit_value(self, value: Any) -> None:
         """Отправка значения виджета в ядро."""
+        print(f"[DEBUG] Отправка события от виджета {self.abstract_widget.id}: {value}")
         self.post_event(self.abstract_widget.id, value)
 
     def get_current_value(self) -> Any:

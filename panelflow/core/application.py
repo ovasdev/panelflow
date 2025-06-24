@@ -25,6 +25,11 @@ from .events import (
     StateChangedEvent,
     ErrorOccurredEvent
 )
+import logging
+from panelflow.logging_config import get_logger
+
+# Инициализируем логгер для ядра
+logger = get_logger(__name__)
 
 # JSON Schema для валидации конфигурации PanelFlow
 APPLICATION_CONFIG_SCHEMA = {
@@ -182,6 +187,10 @@ class Application:
             ValidationError: Если конфигурация не прошла валидацию
             ValueError: Если найдены ошибки целостности конфигурации
         """
+        logger.info("Инициализация Application (ядро PanelFlow)")
+        logger.debug(f"Путь конфигурации: {config_path}")
+        logger.debug(f"Обработчики: {list(handler_map.keys())}")
+
         self.config_path = Path(config_path)
         self.handler_map = handler_map
         self._panel_templates: Dict[str, AbstractPanel] = {}
@@ -223,6 +232,11 @@ class Application:
         Args:
             event: Событие для обработки
         """
+        logger.debug(f"Получено событие: {type(event).__name__}")
+
+        if isinstance(event, WidgetSubmittedEvent):
+            logger.info(f"WidgetSubmittedEvent: виджет='{event.widget_id}', значение={event.value}")
+
         try:
             if isinstance(event, WidgetSubmittedEvent):
                 self._handle_widget_submission(event)
@@ -238,6 +252,8 @@ class Application:
 
         except Exception as e:
             # Перехватываем любые внутренние ошибки и публикуем событие ошибки
+            logger.error(f"Ошибка при обработке события {type(event).__name__}: {e}", exc_info=True)
+
             self._publish_event(ErrorOccurredEvent(
                 title="Внутренняя ошибка ядра",
                 message=f"Ошибка при обработке события {type(event).__name__}: {str(e)}"
@@ -265,6 +281,12 @@ class Application:
             ValidationError: Если JSON не соответствует схеме
             json.JSONDecodeError: Если файл содержит невалидный JSON
         """
+        logger.info(f"Загрузка конфигурации из {self.config_path}")
+
+        if not self.config_path.exists():
+            logger.error(f"Файл конфигурации не найден: {self.config_path}")
+            raise FileNotFoundError(f"Файл конфигурации не найден: {self.config_path}")
+
         if not self.config_path.exists():
             raise FileNotFoundError(f"Файл конфигурации не найден: {self.config_path}")
 
@@ -302,6 +324,10 @@ class Application:
         Args:
             config_data: Валидированные данные конфигурации
         """
+        logger.debug("Парсинг конфигурации в объекты")
+        self._entry_panel_id = config_data["entryPanel"]
+        logger.info(f"Панель входа: {self._entry_panel_id}")
+
         self._entry_panel_id = config_data["entryPanel"]
         self._panel_templates = {}
 
@@ -322,6 +348,7 @@ class Application:
             )
 
             self._panel_templates[panel.id] = panel
+        logger.info(f"Загружено {len(self._panel_templates)} панелей")
 
     def _create_widget_from_data(self, widget_data: dict) -> AbstractWidget:
         """
@@ -443,11 +470,15 @@ class Application:
         Args:
             event: Событие подтверждения виджета
         """
+        logger.debug(f"Обработка подтверждения виджета '{event.widget_id}'")
+
         # Находим узел, содержащий виджет
         source_node = self._find_node_by_widget_id(event.widget_id)
         if not source_node:
             # Виджет не найден - игнорируем событие
             return
+
+        logger.debug(f"Найден узел панели: '{source_node.panel_template.title}'")
 
         # Автоматически обновляем данные формы
         source_node.form_data[event.widget_id] = event.value
@@ -511,6 +542,7 @@ class Application:
         Args:
             event: Событие горизонтальной навигации
         """
+        logger.debug(f"Горизонтальная навигация: {event.direction}")
         if not self._active_node:
             return
 
@@ -549,6 +581,7 @@ class Application:
         Args:
             event: Событие вертикальной навигации
         """
+        logger.debug(f"Вертикальная навигация: {event.direction}")
         if not self._active_node or not self._active_node.parent:
             # Нет активного узла или это корневой узел
             return
@@ -602,10 +635,14 @@ class Application:
         Args:
             event: Событие навигации назад
         """
+        logger.info("Обработка навигации назад")
+
         if not self._active_node:
+            logger.warning("Нет активного узла для навигации назад")
             return
 
         active_node = self._active_node
+        logger.debug(f"Закрытие панели: '{active_node.panel_template.title}'")
         parent = active_node.parent
 
         # Если это корневой узел, навигация назад невозможна
@@ -656,6 +693,7 @@ class Application:
 
         # Публикуем событие изменения состояния
         self._publish_event(StateChangedEvent(tree_root=self._tree_root))
+        logger.debug("Навигация назад завершена")
 
     # Приватные методы навигации
 
@@ -669,6 +707,8 @@ class Application:
             source_widget_id: ID виджета, инициировавшего навигацию
             target: ID панели или объект AbstractPanel для навигации
         """
+        logger.info(f"Навигация вниз: от '{source_node.panel_template.title}' -> '{target}'")
+
         # Проверяем, существует ли стек для данного виджета
         if source_widget_id in source_node.children_stacks:
             # Уничтожаем старую ветку
@@ -694,6 +734,7 @@ class Application:
             parent=source_node,
             is_active=False  # Пока не активный
         )
+        logger.debug(f"Создан новый узел для панели '{panel_template.title}'")
 
         # Создаем новый стек с этим узлом
         source_node.children_stacks[source_widget_id] = [new_node]
@@ -703,6 +744,8 @@ class Application:
 
         # Публикуем событие изменения состояния
         self._publish_event(StateChangedEvent(tree_root=self._tree_root))
+
+        logger.debug("Навигация вниз завершена успешно")
 
     def _find_node_by_widget_id(self, widget_id: str) -> TreeNode | None:
         """
