@@ -44,7 +44,7 @@ graph TD
     CoreApp -- "Loads" --> B;
     CoreApp -- "Links with" --> C;
     A -- "2. Chooses & Runs with" --> TUI;
-
+    
     CoreApp -- "Communicates via" --> Events;
     TUI -- "Communicates via" --> Events;
 

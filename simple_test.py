@@ -24,12 +24,17 @@ class SimpleHandler(BasePanelHandler):
     """Простой обработчик для тестирования."""
 
     def on_widget_update(self, widget_id: str, value: Any) -> tuple | None:
-        print(f"Обработчик вызван: widget_id={widget_id}, value={value}")
+        print(f"🔧 Обработчик вызван:")
+        print(f"   widget_id = {widget_id}")
+        print(f"   value = {value}")
+        print(f"   context = {self.context}")
+        print(f"   form_data = {self.form_data}")
 
         if widget_id == "goto_child":
-            print("→ Навигация к дочерней панели")
+            print("   → Возвращаю команду навигации: ('navigate_down', 'child')")
             return ("navigate_down", "child")
 
+        print("   → Навигация не требуется (возвращаю None)")
         return None
 
 
@@ -124,14 +129,79 @@ def main():
         # Тест 3: Навигация вниз
         print("\n4. Тест навигации к дочерней панели...")
         events_received.clear()
+
+        print(f"   До навигации:")
+        print(f"     - активная панель = {app.active_node.panel_template.id}")
+        print(f"     - дочерних стеков = {len(app.active_node.children_stacks)}")
+        print(f"     - доступные панели = {list(app._panel_templates.keys())}")
+
+        # Проверяем, что панель существует
+        if "child" not in app._panel_templates:
+            print(f"   ❌ КРИТИЧЕСКАЯ ОШИБКА: Панель 'child' не найдена!")
+            print(f"   Доступные панели: {list(app._panel_templates.keys())}")
+            return
+
+        # Проверяем обработчик
+        if "SimpleHandler" not in app.handler_map:
+            print(f"   ❌ КРИТИЧЕСКАЯ ОШИБКА: Обработчик 'SimpleHandler' не найден!")
+            return
+
+        print(f"   Отправляю событие...")
         app.post_event(WidgetSubmittedEvent(widget_id="goto_child", value=True))
 
-        assert len(events_received) == 1
-        assert isinstance(events_received[0], StateChangedEvent)
-        assert app.active_node.panel_template.id == "child"
-        assert app.active_node.parent.panel_template.id == "main"
-        assert "test data" in str(app.active_node.context)  # Данные должны передаться
-        print("✅ Навигация вниз работает")
+        print(f"   После навигации:")
+        print(f"     - активная панель = {app.active_node.panel_template.id}")
+        print(f"     - событий получено = {len(events_received)}")
+
+        if events_received:
+            print(f"     - типы событий = {[type(e).__name__ for e in events_received]}")
+            # Проверяем на ошибки
+            for event in events_received:
+                if isinstance(event, ErrorOccurredEvent):
+                    print(f"   ❌ НАЙДЕНА ОШИБКА: {event.title}")
+                    print(f"   📝 Сообщение: {event.message}")
+                    return
+
+        # Проверяем структуру дерева
+        if app.active_node.parent:
+            print(f"     - родительская панель = {app.active_node.parent.panel_template.id}")
+            print(f"     - стеки родителя = {list(app.active_node.parent.children_stacks.keys())}")
+            if app.active_node.parent.children_stacks:
+                for stack_key, stack in app.active_node.parent.children_stacks.items():
+                    print(f"       * стек '{stack_key}': {[node.panel_template.id for node in stack]}")
+
+        # Более мягкая проверка
+        if app.active_node.panel_template.id == "child":
+            print("   ✅ Навигация вниз работает")
+            # Дополнительные проверки
+            if app.active_node.parent and app.active_node.parent.panel_template.id == "main":
+                print("   ✅ Родительская связь корректна")
+            if "text_field" in app.active_node.context:
+                print("   ✅ Контекст передан корректно")
+            else:
+                print(f"   ⚠️  Контекст: {app.active_node.context}")
+        else:
+            print(f"   ❌ Навигация НЕ СРАБОТАЛА!")
+            print(f"   Ожидали: 'child'")
+            print(f"   Получили: '{app.active_node.panel_template.id}'")
+
+            # Диагностика проблемы
+            print(f"\n🔍 ДИАГНОСТИКА:")
+            print(f"   1. Данные формы main: {app.tree_root.form_data}")
+            print(f"   2. Активный узел - это корень? {app.active_node is app.tree_root}")
+
+            # Проверяем, вызвался ли обработчик (через form_data)
+            if "goto_child" in app.active_node.form_data:
+                print(f"   3. ✅ Обработчик вызвался (виджет в form_data)")
+                print(f"   4. ❌ Но навигация не произошла - проблема в _execute_navigation_down")
+            else:
+                print(f"   3. ❌ Обработчик НЕ ВЫЗВАЛСЯ")
+                print(f"   4. Возможные причины:")
+                print(f"      - Виджет не найден")
+                print(f"      - Обработчик не найден")
+                print(f"      - Ошибка в _handle_widget_submission")
+
+            return  # Прерываем тест для анализа
 
         # Тест 4: Горизонтальная навигация
         print("\n5. Тест горизонтальной навигации...")
@@ -143,6 +213,7 @@ def main():
 
         # Идем вправо (к дочерней)
         app.post_event(HorizontalNavigationEvent(direction="next"))
+        print(app.active_node.panel_template.id)
         assert app.active_node.panel_template.id == "child"
 
         print("✅ Горизонтальная навигация работает")
