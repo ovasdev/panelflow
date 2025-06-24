@@ -47,4 +47,3 @@ class TreeNode:
     # Флаг фокуса
     is_active: bool = False
 
-

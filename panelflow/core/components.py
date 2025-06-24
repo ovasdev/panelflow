@@ -54,5 +54,3 @@ class AbstractPanel:
     description: str = ""
     widgets: list[AbstractWidget] = field(default_factory=list)
     handler_class_name: str | None = None
-
-

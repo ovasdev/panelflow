@@ -73,4 +73,3 @@ class ErrorOccurredEvent(BaseEvent):
     title: str
     message: str
 
-

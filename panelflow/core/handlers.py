@@ -40,5 +40,3 @@ class BasePanelHandler(ABC):
             - None, если навигация не требуется
         """
         pass
-
-

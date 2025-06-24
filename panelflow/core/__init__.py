@@ -13,8 +13,6 @@ from .components import (
     PanelLink,
     AbstractPanel
 )
-from .state import TreeNode
-from .handlers import BasePanelHandler
 from .events import (
     BaseEvent,
     WidgetSubmittedEvent,
@@ -24,6 +22,8 @@ from .events import (
     StateChangedEvent,
     ErrorOccurredEvent
 )
+from .handlers import BasePanelHandler
+from .state import TreeNode
 
 __all__ = [
     'Application',
@@ -43,4 +43,3 @@ __all__ = [
     'StateChangedEvent',
     'ErrorOccurredEvent'
 ]
-

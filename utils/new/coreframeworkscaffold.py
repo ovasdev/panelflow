@@ -1,3 +1,283 @@
+# panelflow/core/__init__.py
+"""
+PanelFlow Core Package
+Центральный, платформо-независимый модуль для управления состоянием,
+навигацией и бизнес-логикой приложений PanelFlow.
+"""
+
+from .application import Application
+from .components import (
+    AbstractWidget,
+    AbstractTextInput,
+    AbstractButton,
+    AbstractOptionSelect,
+    PanelLink,
+    AbstractPanel
+)
+from .state import TreeNode
+from .handlers import BasePanelHandler
+from .events import (
+    BaseEvent,
+    WidgetSubmittedEvent,
+    HorizontalNavigationEvent,
+    VerticalNavigationEvent,
+    BackNavigationEvent,
+    StateChangedEvent,
+    ErrorOccurredEvent
+)
+
+__all__ = [
+    'Application',
+    'AbstractWidget',
+    'AbstractTextInput',
+    'AbstractButton',
+    'AbstractOptionSelect',
+    'PanelLink',
+    'AbstractPanel',
+    'TreeNode',
+    'BasePanelHandler',
+    'BaseEvent',
+    'WidgetSubmittedEvent',
+    'HorizontalNavigationEvent',
+    'VerticalNavigationEvent',
+    'BackNavigationEvent',
+    'StateChangedEvent',
+    'ErrorOccurredEvent'
+]
+
+# panelflow/core/events.py
+"""
+Система событий для взаимодействия между Слоем Ядра и Слоем Рендеринга.
+Определяет все типы событий, используемые в PanelFlow.
+"""
+
+from abc import ABC
+from dataclasses import dataclass
+from typing import Any, Literal
+
+
+@dataclass
+class BaseEvent(ABC):
+    """Базовый класс для всех событий в системе."""
+    pass
+
+
+# Входящие события (Renderer → Core)
+
+@dataclass
+class WidgetSubmittedEvent(BaseEvent):
+    """
+    Событие подтверждения ввода или выбора значения в виджете.
+    Триггеры: Enter в TextInput, выбор в OptionSelect, клик на Button/PanelLink.
+    """
+    widget_id: str
+    value: Any
+
+
+@dataclass
+class HorizontalNavigationEvent(BaseEvent):
+    """
+    Событие навигации между колонками.
+    Триггеры: Ctrl + → (next), Ctrl + ← (previous).
+    """
+    direction: Literal["next", "previous"]
+
+
+@dataclass
+class VerticalNavigationEvent(BaseEvent):
+    """
+    Событие навигации по стеку панелей внутри колонки.
+    Триггеры: Ctrl + ↑ (up), Ctrl + ↓ (down).
+    """
+    direction: Literal["up", "down"]
+
+
+@dataclass
+class BackNavigationEvent(BaseEvent):
+    """
+    Событие возврата назад (закрытие текущей панели).
+    Триггеры: ← (стрелка влево) или Backspace.
+    """
+    pass
+
+
+# Исходящие события (Core → Renderer)
+
+@dataclass
+class StateChangedEvent(BaseEvent):
+    """
+    Событие изменения состояния дерева.
+    Сообщает Рендереру о необходимости перерисовки интерфейса.
+    """
+    tree_root: 'TreeNode'
+
+
+@dataclass
+class ErrorOccurredEvent(BaseEvent):
+    """
+    Событие возникновения внутренней ошибки.
+    Сообщает Рендереру о необходимости отображения экрана ошибки.
+    """
+    title: str
+    message: str
+
+
+# panelflow/core/components.py
+"""
+Компоненты UI: абстрактные классы для описания структуры интерфейса.
+Эти классы представляют шаблоны виджетов и панелей.
+"""
+
+from abc import ABC
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass
+class AbstractWidget(ABC):
+    """Базовый класс для всех виджетов."""
+    id: str
+    type: str = field(init=False)
+    title: str
+    value: Any = None
+    handler_class_name: str | None = None
+
+
+@dataclass
+class AbstractTextInput(AbstractWidget):
+    """Виджет текстового ввода."""
+    placeholder: str = ""
+    type: str = field(default="text_input", init=False)
+
+
+@dataclass
+class AbstractButton(AbstractWidget):
+    """Виджет кнопки."""
+    type: str = field(default="button", init=False)
+
+
+@dataclass
+class AbstractOptionSelect(AbstractWidget):
+    """Виджет выбора из списка опций."""
+    options: list = field(default_factory=list)
+    type: str = field(default="option_select", init=False)
+
+
+@dataclass
+class PanelLink(AbstractWidget):
+    """Виджет ссылки на другую панель."""
+    target_panel_id: str = ""
+    description: str = ""
+    type: str = field(default="panel_link", init=False)
+
+
+@dataclass
+class AbstractPanel:
+    """Класс для описания панели (шаблона экрана)."""
+    id: str
+    title: str
+    description: str = ""
+    widgets: list[AbstractWidget] = field(default_factory=list)
+    handler_class_name: str | None = None
+
+
+# panelflow/core/state.py
+"""
+Управление состоянием приложения через дерево узлов.
+TreeNode представляет экземпляр панели в дереве навигации.
+"""
+
+from __future__ import annotations
+from dataclasses import dataclass, field
+from uuid import UUID, uuid4
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .components import AbstractPanel
+
+
+@dataclass
+class TreeNode:
+    """
+    Узел дерева состояний, представляющий экземпляр панели.
+
+    Каждый узел содержит:
+    - Ссылку на шаблон панели
+    - Контекст от родителя
+    - Собранные данные формы
+    - Навигационные связи с дочерними узлами
+    """
+
+    # Ссылка на "шаблон" панели
+    panel_template: AbstractPanel
+
+    # Контекст, полученный от родителя
+    context: dict = field(default_factory=dict)
+
+    # Данные формы, собранные виджетами этого узла
+    form_data: dict = field(default_factory=dict)
+
+    # Навигационные связи
+    parent: TreeNode | None = None
+
+    # КЛЮЧЕВАЯ СТРУКТУРА ДЛЯ НАВИГАЦИИ
+    # Словарь, где ключ - ID виджета-родителя, породившего ветку,
+    # а значение - стек дочерних узлов.
+    children_stacks: dict[str, list[TreeNode]] = field(default_factory=dict)
+
+    # Уникальный ID экземпляра
+    node_id: UUID = field(default_factory=uuid4)
+
+    # Флаг фокуса
+    is_active: bool = False
+
+
+# panelflow/core/handlers.py
+"""
+Базовые классы для пользовательских обработчиков бизнес-логики.
+Предоставляет интерфейс для реализации пользовательской логики.
+"""
+
+from abc import ABC, abstractmethod
+from typing import Any
+
+
+class BasePanelHandler(ABC):
+    """
+    Базовый класс для обработчиков панелей.
+    Пользователи должны наследовать этот класс и реализовать on_widget_update.
+    """
+
+    def __init__(self, context: dict, form_data: dict):
+        """
+        Инициализация обработчика.
+
+        Args:
+            context: Контекст, переданный от родительской панели
+            form_data: Текущие данные формы панели
+        """
+        self.context = context
+        self.form_data = form_data
+
+    @abstractmethod
+    def on_widget_update(self, widget_id: str, value: Any) -> tuple | None:
+        """
+        Обработка обновления виджета.
+
+        Args:
+            widget_id: ID виджета, который был обновлен
+            value: Новое значение виджета
+
+        Returns:
+            Команда навигации в формате:
+            - ("navigate_down", "panel_id") для навигации по ID панели
+            - ("navigate_down", AbstractPanel(...)) для навигации по объекту панели
+            - None, если навигация не требуется
+        """
+        pass
+
+
+# panelflow/core/application.py
 """
 Главный оркестратор приложения PanelFlow.
 Управляет состоянием, обрабатывает события и координирует взаимодействие
