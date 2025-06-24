@@ -5,12 +5,10 @@
 
 from typing import List, Optional, Dict, Type, Any
 from textual.screen import Screen
-from textual.widgets import Static, Placeholder, Label, ScrollableContainer
-from textual.containers import Horizontal, Vertical, Container
+from textual.widgets import Static, Label
+from textual.containers import Horizontal, Vertical, Container, ScrollableContainer
 from textual.binding import Binding
-from textual.reactive import reactive
 from textual.widget import Widget
-from textual import events as textual_events
 
 from panelflow.core import Application as CoreApplication
 from panelflow.core.events import (
@@ -81,16 +79,20 @@ class PanelWidget(ScrollableContainer):
             yield Label(panel.description, classes="panel-description")
 
         # Контейнер для виджетов
-        with Vertical(classes="panel-content") as content:
+        with Vertical(classes="panel-content"):
             for widget_def in panel.widgets:
-                widget_instance = create_widget(
-                    widget_def,
-                    self.node,
-                    self._post_widget_event
-                )
-                if widget_instance:
-                    self.widget_instances[widget_def.id] = widget_instance
-                    yield widget_instance
+                try:
+                    widget_instance = create_widget(
+                        widget_def,
+                        self.node,
+                        self._post_widget_event
+                    )
+                    if widget_instance:
+                        self.widget_instances[widget_def.id] = widget_instance
+                        yield widget_instance
+                except Exception as e:
+                    # В случае ошибки создания виджета, показываем заглушку
+                    yield Label(f"Ошибка виджета: {widget_def.id}", classes="widget-error")
 
     def _post_widget_event(self, widget_id: str, value: Any) -> None:
         """Отправка события от виджета в ядро."""
@@ -251,12 +253,25 @@ class MainScreen(Screen):
         # Контейнер для колонок
         with Horizontal(classes="columns-container") as columns_container:
             self.columns_container = columns_container
-            # Создаем 3 колонки
+            # Создаем 3 пустые колонки
             for i in range(3):
-                with Container(classes="column") as column:
-                    column.mount(Placeholder("Пустая колонка", classes="empty-column"))
-                    self.columns.append(column)
-                    yield column
+                column = Container(classes="column")
+                self.columns.append(column)
+                yield column
+
+    def on_mount(self) -> None:
+        """Инициализация после монтирования экрана."""
+        # Заполняем колонки пустыми placeholder'ами с небольшой задержкой
+        self.set_timer(0.05, self._initialize_empty_columns)
+
+    def _initialize_empty_columns(self) -> None:
+        """Инициализация пустых колонок."""
+        for column in self.columns:
+            if column.is_attached and not column.children:
+                try:
+                    column.mount(Static("Пустая колонка", classes="empty-column"))
+                except Exception:
+                    pass
 
     def update_view(self, tree_root: TreeNode) -> None:
         """
@@ -271,8 +286,11 @@ class MainScreen(Screen):
         # Обновляем заголовок
         self._update_header(visible_path)
 
-        # Обновляем колонки
-        self._update_columns(visible_path)
+        # Обновляем колонки с небольшой задержкой
+        def update_columns_delayed():
+            self._update_columns(visible_path)
+
+        self.set_timer(0.05, update_columns_delayed)
 
         # Сохраняем текущее состояние
         self.visible_path = visible_path
@@ -318,7 +336,7 @@ class MainScreen(Screen):
 
     def _update_columns(self, visible_path: List[TreeNode]) -> None:
         """Обновление содержимого колонок."""
-        if not self.columns:
+        if not self.columns or not self.is_attached:
             return
 
         # Очищаем текущие панели
@@ -329,8 +347,9 @@ class MainScreen(Screen):
 
         # Очищаем колонки
         for column in self.columns:
-            for child in list(column.children):
-                child.remove()
+            if column.is_attached:
+                for child in list(column.children):
+                    child.remove()
 
         # Определяем видимые узлы (максимум 3)
         total_nodes = len(visible_path)
@@ -343,16 +362,25 @@ class MainScreen(Screen):
 
             # Добавляем панель в соответствующую колонку
             column_index = i
-            if column_index < len(self.columns):
-                self.columns[column_index].mount(panel_widget)
-                self.panel_widgets.append(panel_widget)
+            if column_index < len(self.columns) and self.columns[column_index].is_attached:
+                try:
+                    self.columns[column_index].mount(panel_widget)
+                    self.panel_widgets.append(panel_widget)
 
-                if is_active:
-                    self.active_panel_index = column_index
+                    if is_active:
+                        self.active_panel_index = column_index
+                except Exception as e:
+                    # Логируем ошибку, но не прерываем работу
+                    pass
 
         # Заполняем пустые колонки placeholder'ами
         for i in range(len(visible_nodes), 3):
-            self.columns[i].mount(Placeholder("Пустая колонка", classes="empty-column"))
+            if i < len(self.columns) and self.columns[i].is_attached:
+                try:
+                    self.columns[i].mount(Static("Пустая колонка", classes="empty-column"))
+                except Exception as e:
+                    # Логируем ошибку, но не прерываем работу
+                    pass
 
     # --- Обработчики действий для BINDINGS ---
 

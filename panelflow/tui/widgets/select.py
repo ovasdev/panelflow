@@ -78,6 +78,7 @@ class TuiOptionSelect(BaseWidgetMixin, FocusableWidgetCSS, Vertical):
         if abstract_widget.value and abstract_widget.value in abstract_widget.options:
             try:
                 index = abstract_widget.options.index(abstract_widget.value)
+                # Устанавливаем выделение сразу
                 self.option_list.highlighted = index
             except (ValueError, IndexError):
                 pass
@@ -92,27 +93,41 @@ class TuiOptionSelect(BaseWidgetMixin, FocusableWidgetCSS, Vertical):
         Обработчик выбора опции из списка.
         """
         event.stop()
-        if event.option and hasattr(event.option, 'prompt'):
-            selected_value = str(event.option.prompt)
+        if event.option:
+            selected_value = str(event.option)
             self._submit_value(selected_value)
 
     def action_select_option(self) -> None:
         """Действие для клавиши Enter - выбрать текущую опцию."""
-        if self.option_list.highlighted is not None:
-            highlighted_option = self.option_list.get_option_at_index(self.option_list.highlighted)
-            if highlighted_option and hasattr(highlighted_option, 'prompt'):
-                selected_value = str(highlighted_option.prompt)
-                self._submit_value(selected_value)
+        if hasattr(self.option_list, 'highlighted') and self.option_list.highlighted is not None:
+            try:
+                # Получаем выбранную опцию
+                options = list(self.option_list.options)
+                if 0 <= self.option_list.highlighted < len(options):
+                    selected_option = options[self.option_list.highlighted]
+                    selected_value = str(selected_option)
+                    self._submit_value(selected_value)
+            except (IndexError, AttributeError):
+                pass
 
     def action_option_up(self) -> None:
         """Действие для стрелки вверх."""
         if hasattr(self.option_list, 'action_cursor_up'):
             self.option_list.action_cursor_up()
+        elif hasattr(self.option_list, 'highlighted'):
+            # Альтернативный способ навигации
+            if self.option_list.highlighted is not None and self.option_list.highlighted > 0:
+                self.option_list.highlighted -= 1
 
     def action_option_down(self) -> None:
         """Действие для стрелки вниз."""
         if hasattr(self.option_list, 'action_cursor_down'):
             self.option_list.action_cursor_down()
+        elif hasattr(self.option_list, 'highlighted') and hasattr(self.option_list, 'options'):
+            # Альтернативный способ навигации
+            options_count = len(list(self.option_list.options))
+            if self.option_list.highlighted is not None and self.option_list.highlighted < options_count - 1:
+                self.option_list.highlighted += 1
 
     def _set_initial_value(self, value: Any) -> None:
         """Установка начально выбранной опции."""
@@ -126,10 +141,14 @@ class TuiOptionSelect(BaseWidgetMixin, FocusableWidgetCSS, Vertical):
 
     def get_current_value(self) -> Optional[str]:
         """Получение текущей выбранной опции."""
-        if hasattr(self, 'option_list') and self.option_list.highlighted is not None:
-            highlighted_option = self.option_list.get_option_at_index(self.option_list.highlighted)
-            if highlighted_option and hasattr(highlighted_option, 'prompt'):
-                return str(highlighted_option.prompt)
+        if hasattr(self, 'option_list') and hasattr(self.option_list, 'highlighted') and self.option_list.highlighted is not None:
+            try:
+                options = list(self.option_list.options)
+                if 0 <= self.option_list.highlighted < len(options):
+                    selected_option = options[self.option_list.highlighted]
+                    return str(selected_option)
+            except (IndexError, AttributeError):
+                pass
         return None
 
     def set_focus(self, focus: bool) -> None:

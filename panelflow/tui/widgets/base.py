@@ -4,7 +4,6 @@
 
 from typing import Any, Callable
 from textual.widget import Widget
-from textual.reactive import reactive
 
 from panelflow.core.components import AbstractWidget
 from panelflow.core.state import TreeNode
@@ -17,10 +16,10 @@ class BaseWidgetMixin:
     """
 
     def __init__(
-            self,
-            abstract_widget: AbstractWidget,
-            node: TreeNode,
-            post_event_callback: Callable[[str, Any], None]
+        self,
+        abstract_widget: AbstractWidget,
+        node: TreeNode,
+        post_event_callback: Callable[[str, Any], None]
     ):
         self.abstract_widget = abstract_widget
         self.node = node
@@ -81,12 +80,12 @@ class FocusableWidgetCSS:
         border: solid $accent;
         background: $surface-lighten-1;
     }
-
+    
     Widget {
         margin: 1 0;
         padding: 0 1;
     }
-
+    
     Widget.focused {
         background: $primary-lighten-3;
     }

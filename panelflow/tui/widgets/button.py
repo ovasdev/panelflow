@@ -23,13 +23,13 @@ class TuiButton(BaseWidgetMixin, FocusableWidgetCSS, Button):
         height: 3;
         margin: 1 0;
     }
-
+    
     TuiButton.focused {
         background: $accent;
-        color: $text-on-accent;
+        color: $text-accent;
         border: solid $accent-lighten-1;
     }
-
+    
     TuiButton:hover {
         background: $primary-lighten-1;
     }
@@ -40,10 +40,10 @@ class TuiButton(BaseWidgetMixin, FocusableWidgetCSS, Button):
     ]
 
     def __init__(
-            self,
-            abstract_widget: AbstractButton,
-            node: TreeNode,
-            post_event_callback
+        self,
+        abstract_widget: AbstractButton,
+        node: TreeNode,
+        post_event_callback
     ):
         # Инициализация Button с заголовком
         Button.__init__(

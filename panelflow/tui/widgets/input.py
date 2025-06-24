@@ -24,31 +24,31 @@ class TuiTextInput(BaseWidgetMixin, FocusableWidgetCSS, Vertical):
         height: auto;
         margin: 1 0;
     }
-
+    
     TuiTextInput .input-label {
         color: $text;
         margin-bottom: 1;
         text-style: bold;
     }
-
+    
     TuiTextInput Input {
         width: 100%;
     }
-
+    
     TuiTextInput Input:focus {
         border: solid $accent;
     }
-
+    
     TuiTextInput.focused .input-label {
         color: $accent;
     }
     """
 
     def __init__(
-            self,
-            abstract_widget: AbstractTextInput,
-            node: TreeNode,
-            post_event_callback
+        self,
+        abstract_widget: AbstractTextInput,
+        node: TreeNode,
+        post_event_callback
     ):
         # Инициализация контейнера
         Vertical.__init__(self, id=abstract_widget.id)
@@ -63,20 +63,17 @@ class TuiTextInput(BaseWidgetMixin, FocusableWidgetCSS, Vertical):
             value=str(abstract_widget.value) if abstract_widget.value is not None else ""
         )
 
-        # Подключаем обработчики событий
-        self.input_widget.on_input_submitted = self._on_input_submitted
-
     def compose(self):
         """Создание структуры виджета."""
         yield self.label
         yield self.input_widget
 
-    def _on_input_submitted(self, event: Input.Submitted) -> None:
+    def on_input_submitted(self, event: Input.Submitted) -> None:
         """
         Обработчик подтверждения ввода (Enter).
         """
         event.stop()
-        value = self.input_widget.value
+        value = event.input.value
         self._submit_value(value)
 
     def _set_initial_value(self, value: Any) -> None:

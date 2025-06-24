@@ -3,7 +3,7 @@
 Связывает panelflow.core с визуальным представлением в терминале.
 """
 
-from textual.app import App, ComposeResult
+from textual.app import App
 from textual.widgets import Header, Footer
 
 from panelflow.core import Application as CoreApplication
@@ -22,12 +22,12 @@ class TuiApplication(App):
     Screen {
         background: $surface;
     }
-
+    
     Header {
         dock: top;
         height: 1;
     }
-
+    
     Footer {
         dock: bottom;
         height: 1;
@@ -43,7 +43,7 @@ class TuiApplication(App):
         # Подписываемся на события от Ядра
         self.core.subscribe_to_events(self._on_core_event)
 
-    def compose(self) -> ComposeResult:
+    def compose(self):
         """Создание базовой структуры приложения."""
         yield Header()
         yield Footer()

@@ -27,40 +27,40 @@ class TuiPanelLink(BaseWidgetMixin, FocusableWidgetCSS, Vertical):
         border: solid $primary-darken-1;
         background: $surface;
     }
-
+    
     TuiPanelLink:hover {
         background: $primary-lighten-3;
         border: solid $primary;
     }
-
+    
     TuiPanelLink.focused {
         background: $accent-lighten-3;
         border: solid $accent;
     }
-
+    
     TuiPanelLink .link-title {
         color: $primary;
         text-style: bold;
         margin-bottom: 1;
     }
-
+    
     TuiPanelLink .link-description {
         color: $text-muted;
         text-style: italic;
     }
-
+    
     TuiPanelLink .link-arrow {
         color: $accent;
         text-align: right;
     }
-
+    
     TuiPanelLink.focused .link-title {
         color: $accent;
         text-style: bold underline;
     }
-
+    
     TuiPanelLink.focused .link-arrow {
-        color: $text-on-accent;
+        color: $text-accent;
     }
     """
 
@@ -69,10 +69,10 @@ class TuiPanelLink(BaseWidgetMixin, FocusableWidgetCSS, Vertical):
     ]
 
     def __init__(
-            self,
-            abstract_widget: PanelLink,
-            node: TreeNode,
-            post_event_callback
+        self,
+        abstract_widget: PanelLink,
+        node: TreeNode,
+        post_event_callback
     ):
         # Инициализация контейнера
         Vertical.__init__(self, id=abstract_widget.id)

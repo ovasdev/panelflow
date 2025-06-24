@@ -18,9 +18,9 @@ from .link import TuiPanelLink
 
 
 def create_widget(
-        abstract_widget: AbstractWidget,
-        node: TreeNode,
-        post_event_callback: Callable[[str, Any], None]
+    abstract_widget: AbstractWidget,
+    node: TreeNode,
+    post_event_callback: Callable[[str, Any], None]
 ) -> Optional[Widget]:
     """
     Фабричная функция для создания конкретного TUI-виджета
