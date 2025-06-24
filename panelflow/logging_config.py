@@ -10,9 +10,9 @@ from typing import Optional
 
 
 def setup_logging(
-        log_level: str = "DEBUG",
-        log_file: Optional[str] = None,
-        console_output: bool = False
+    log_level: str = "DEBUG",
+    log_file: Optional[str] = None,
+    console_output: bool = False
 ) -> logging.Logger:
     """
     Настройка системы логирования для PanelFlow.
@@ -93,10 +93,15 @@ def init_core_logging() -> logging.Logger:
 
 
 def init_tui_logging() -> logging.Logger:
-    """Инициализация логирования для TUI."""
+    """Инициализация логирования для TUI (только в файл)."""
     return setup_logging(log_level="DEBUG", console_output=False)
 
 
 def init_debug_logging() -> logging.Logger:
-    """Инициализация отладочного логирования (с выводом в консоль)."""
+    """Инициализация отладочного логирования (БЕЗ вывода в консоль для TUI)."""
+    return setup_logging(log_level="DEBUG", console_output=False)
+
+
+def init_console_logging() -> logging.Logger:
+    """Инициализация логирования с выводом в консоль (только для CLI утилит)."""
     return setup_logging(log_level="DEBUG", console_output=True)

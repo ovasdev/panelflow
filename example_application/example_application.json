@@ -1,0 +1,107 @@
+{
+  "entryPanel": "main_menu",
+  "panels": [
+    {
+      "id": "main_menu",
+      "title": "Главное меню",
+      "description": "Добро пожаловать в PanelFlow!",
+      "handler_class_name": "MainMenuHandler",
+      "widgets": [
+        {
+          "id": "name_input",
+          "type": "text_input",
+          "title": "Ваше имя",
+          "placeholder": "Введите ваше имя...",
+          "value": ""
+        },
+        {
+          "id": "settings_button",
+          "type": "button",
+          "title": "Настройки",
+          "value": "settings"
+        },
+        {
+          "id": "files_button",
+          "type": "button",
+          "title": "Работа с файлами",
+          "value": "files"
+        },
+        {
+          "id": "about_link",
+          "type": "panel_link",
+          "title": "О программе",
+          "description": "Информация о PanelFlow",
+          "target_panel_id": "about_panel"
+        }
+      ]
+    },
+    {
+      "id": "settings_panel",
+      "title": "Настройки",
+      "description": "Настройки приложения",
+      "widgets": [
+        {
+          "id": "theme_select",
+          "type": "option_select",
+          "title": "Выберите тему",
+          "options": [
+            "Светлая",
+            "Темная",
+            "Автоматическая"
+          ],
+          "value": "Темная"
+        },
+        {
+          "id": "save_button",
+          "type": "button",
+          "title": "Сохранить настройки",
+          "value": "save"
+        }
+      ]
+    },
+    {
+      "id": "files_panel",
+      "title": "Файлы",
+      "description": "Работа с файлами",
+      "handler_class_name": "FilesHandler",
+      "widgets": [
+        {
+          "id": "file_type_select",
+          "type": "option_select",
+          "title": "Тип файла",
+          "options": [
+            "Текстовые",
+            "Изображения",
+            "Документы"
+          ],
+          "value": "Текстовые"
+        },
+        {
+          "id": "file_path_input",
+          "type": "text_input",
+          "title": "Путь к файлу",
+          "placeholder": "/path/to/file"
+        },
+        {
+          "id": "open_button",
+          "type": "button",
+          "title": "Открыть файл",
+          "value": "open"
+        }
+      ]
+    },
+    {
+      "id": "about_panel",
+      "title": "О программе",
+      "description": "PanelFlow - фреймворк для создания многопанельных приложений",
+      "widgets": [
+        {
+          "id": "version_info",
+          "type": "text_input",
+          "title": "Версия",
+          "value": "1.0.0"
+        }
+      ]
+    }
+  ]
+}
